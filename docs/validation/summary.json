@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0-rc.1",
+  "checked_on": "2026-11-06",
+  "local_unittest": {
+    "ran": 82,
+    "passed": 82
+  },
+  "core_research_removal_detected": true,
+  "yaml_parse": "pass",
+  "native_upload_payload_consistency": "pass",
+  "deterministic_build": "pass",
+  "local_skill_copy_test_hosts": [
+    "codex path",
+    "claude-code path",
+    "gemini-cli path"
+  ],
+  "model_behavior_scenarios": {
+    "defined": 64,
+    "executed": 0,
+    "status": "not_run"
+  },
+  "live_host_tests": {
+    "ChatGPT/Work": "not_run",
+    "Codex": "not_run",
+    "Claude/Cowork": "not_run",
+    "Claude Code": "not_run",
+    "Gemini App": "not_run",
+    "Gemini CLI": "not_run"
+  },
+  "live_web_recruitment_quality": "not_measured",
+  "repository_publish": "not_performed",
+  "scheduling_changes": "not_performed",
+  "license": "owner_decision_pending"
+}

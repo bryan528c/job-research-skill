@@ -1,0 +1,7 @@
+{
+  "version": "0.2.0-rc.1",
+  "removed": "entire research section 3",
+  "detected": true,
+  "exit_code": 1,
+  "meaning": "static regression only; no model run"
+}

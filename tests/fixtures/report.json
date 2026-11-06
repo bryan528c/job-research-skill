@@ -1,0 +1,234 @@
+{
+  "synthetic": true,
+  "report_id": "synth-report-20300406",
+  "date_label": "2030-04-06",
+  "conclusion": "1번부터 준비하고 다른 후보도 마감순으로 확인하면 된다.",
+  "jobs": [
+    {
+      "id": "job-1",
+      "employer": "합성기업1",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-09T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 1,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/1",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/1?postingId=1",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-2",
+      "employer": "합성기업2",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-10T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 2,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/2",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/2?postingId=2",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-3",
+      "employer": "합성기업3",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-11T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 3,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/3",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/3?postingId=3",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-4",
+      "employer": "합성기업4",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-12T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 4,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/4",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/4?postingId=4",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-5",
+      "employer": "합성기업5",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-13T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 5,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/5",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/5?postingId=5",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-6",
+      "employer": "합성기업6",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-14T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 6,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/6",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/6?postingId=6",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    },
+    {
+      "id": "job-7",
+      "employer": "합성기업7",
+      "role": "서비스기획",
+      "round": "2030 신입 1차",
+      "decision": "recommend",
+      "recruiting_status": "open",
+      "checked_at": "2030-04-06T09:00:00+09:00",
+      "deadline": {
+        "kind": "datetime",
+        "at": "2030-04-15T17:00:00+09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "reason": "사용자 흐름 정의와 검수 사례가 핵심업무와 연결된다.",
+      "risk": "기획과제 준비 필요",
+      "blocking_unknowns": [],
+      "report_number": 7,
+      "links": [
+        {
+          "kind": "official_job",
+          "url": "https://careers.example.org/jobs/7",
+          "status": "verified",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        },
+        {
+          "kind": "apply",
+          "url": "https://apply.example.org/jobs/7?postingId=7",
+          "status": "login_required",
+          "checked_at": "2030-04-06T09:00:00+09:00"
+        }
+      ]
+    }
+  ],
+  "next_action": "1번 공고의 실제 작성 문항을 확인한다.",
+  "offer_followup": false
+}

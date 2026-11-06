@@ -1,0 +1,98 @@
+{
+  "synthetic": true,
+  "skill_version": "0.2.0-rc.1",
+  "scope": "broad",
+  "scope_status": "complete",
+  "evidence_assurance": "synthetic_not_execution_evidence",
+  "save_status": "not_requested",
+  "observations": [
+    {
+      "id": "obs-1",
+      "source_url": "https://careers.example.org/source/1",
+      "observed_at": "2030-04-06T09:00:00+09:00"
+    },
+    {
+      "id": "obs-2",
+      "source_url": "https://careers.example.org/source/2",
+      "observed_at": "2030-04-06T09:00:00+09:00"
+    },
+    {
+      "id": "obs-3",
+      "source_url": "https://careers.example.org/source/3",
+      "observed_at": "2030-04-06T09:00:00+09:00"
+    },
+    {
+      "id": "obs-4",
+      "source_url": "https://careers.example.org/source/4",
+      "observed_at": "2030-04-06T09:00:00+09:00"
+    }
+  ],
+  "branches": [
+    {
+      "id": "service",
+      "status": "checked",
+      "evidence_refs": [
+        "obs-1"
+      ]
+    },
+    {
+      "id": "business",
+      "status": "checked",
+      "evidence_refs": [
+        "obs-2"
+      ]
+    }
+  ],
+  "older_open": {
+    "status": "checked",
+    "evidence_refs": [
+      "obs-3"
+    ]
+  },
+  "uncertain_exclusions": {
+    "status": "checked",
+    "evidence_refs": [
+      "obs-2"
+    ]
+  },
+  "counter_searches": [
+    {
+      "evidence_refs": [
+        "obs-4"
+      ],
+      "different_route_reason": "employer inventory rather than indexed title search",
+      "new_fit_ids": [
+        "job-2"
+      ],
+      "followthrough_refs": [
+        "obs-2"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "job-1",
+      "decision": "recommend",
+      "actionable": true
+    },
+    {
+      "id": "job-2",
+      "decision": "recommend",
+      "actionable": true
+    },
+    {
+      "id": "job-3",
+      "decision": "exclude",
+      "reason": "role-specific senior experience mandatory",
+      "evidence_refs": [
+        "obs-2"
+      ]
+    }
+  ],
+  "displayed_job_ids": [
+    "job-1",
+    "job-2"
+  ],
+  "retained_job_ids": [],
+  "stop_reason": "synthetic planned branches reconciled; not a live market claim"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Job Research"
+  short_description: "Find worthwhile jobs and continue only the applications you choose"
+  default_prompt: "Use $job-research to find worthwhile jobs using my available career context and show brief linked results."

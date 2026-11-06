@@ -19,5 +19,5 @@ same chat. “Give me a new-chat prompt for job 2” returns a minimal self-cont
 No forced application workflow. Private state stays private; another provider does not
 inherit memory. Unknown consequential facts are asked only when necessary.
 
-This release has not been run in live GPT, Claude or Gemini sessions. Read
+This RC has been explicitly loaded and exercised in ChatGPT Work, including limited real-web reads. Other host runtimes, native account memory and scheduling remain untested; brief-output consistency is still partial. Read
 `docs/validation.md`, `docs/compatibility.ko.md` and `LICENSE-CHOICE.md` before publication.

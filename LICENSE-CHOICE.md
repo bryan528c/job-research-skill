@@ -1,7 +1,11 @@
-# Publication decision pending
+# Approved publication and license
 
-No open-source license has been granted by this package. The owner must choose and
-approve a license before public reuse is advertised. MIT is an available proposal,
-not an applied license. Existing third-party documents retain their own terms.
-A Work/Codex handoff may prepare a private repository; public visibility and license
-selection require the owner's explicit decision. Do not silently choose either.
+On 2026-11-06 the owner approved public release as an RC/development preview and
+application of the MIT License. [LICENSE](LICENSE) is now the source license.
+The same notice is included in every installation ZIP and the portable instructions.
+Third-party pages and trademarks retain their own terms; the license does not grant
+rights to external job postings or include private user data.
+
+Approval and remote publication are separate states. See
+[GitHub readiness](docs/github-readiness.ko.md) for the observed remote outcome.
+No further license or visibility decision is pending for this RC.

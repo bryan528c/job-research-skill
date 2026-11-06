@@ -1,41 +1,35 @@
-# 호환성 — 공식 문서 기반 구성과 실환경 검증은 다르다
+# 호환성 및 검증 단계 — 0.2.0-rc.2
 
-확인일: 2026-11-06. 계정·제품·지역·정책·버전별 차이가 있으므로 실행 시 확인한다.
-공통 본체는 표준 SKILL.md와 상대경로 참고파일이다. 특정 공급자 도구명·메모리 API를 요구하지 않는다.
+기준일: 2026-11-06 KST. `pass`는 아래 해당 단계에만 적용한다. 문서에 경로가 있다는 사실, 파일 복사, 호스트 로딩, 도구 실행, 저장, 예약은 서로 다른 증거다.
 
-| 환경 | 제공 경로 | 이번 실제 호스트 테스트 |
-|---|---|---|
-| ChatGPT Chat/Work | 계정에서 지원하는 Skills 업로드 또는 플러그인 경로, 없으면 한 파일 지침 | not_run |
-| Codex 로컬 | `.agents/skills/job-research/`, 보조 설치기, OpenAI 플러그인 포장 | not_run |
-| Claude 채팅/Cowork | 스킬 폴더 ZIP 업로드, 계정 스킬 활성화 | not_run |
-| Claude Code 로컬 | `.claude/skills/job-research/`, 보조 설치기 | not_run |
-| Gemini 앱 | 실제 Skills 업로드가 보이면 루트 ZIP, 없으면 허용된 지침/파일/Gem 경로 | not_run |
-| Gemini CLI | `.gemini/skills/job-research/` 또는 자체 `skills install` | not_run |
-| 세 공급자의 API/제3자 호스트 | 호출 환경에 직접 지침·도구·파일·허용 상태 제공 | not_run |
+| 환경 | 제공/설치 경로 | 실제 로딩·호출 | 웹 조사 | 메모리·저장 | 예약·알림 |
+|---|---|---|---|---|---|
+| ChatGPT Work (이번 계정) | 개인 스킬 저장·원격 확인 pass; ZIP 업로드 UI not_run | 새 세션 명시 호출과 참고파일 읽기 pass; 자동 선택 not_run | 공개 공식 채용 사이트 검색/열람 pass, 한 회사 범위 | 합성 메모리 파일·현재 대화 이용 pass; 결과 파일 재읽기 pass; 실제 계정 장기기억·조사 상태 저장 not_run | not_run: 사용자 지시대로 기존 설정 불변 |
+| ChatGPT Chat / 별도 GPT | 루트 ZIP 또는 한 파일 지침 제공 | not_run: 별도 Chat/GPT 실행 세션이 이 실행기에 없음 | not_run | not_run | not_run |
+| Codex CLI | `.agents/skills/job-research/` 복사 시험 pass | not_run: codex 실행파일 없음 | not_run | not_run | not_run |
+| Codex 데스크톱·IDE | 공통 폴더/플러그인 제공 | not_run: 해당 앱 실행 환경 없음 | not_run | not_run | not_run |
+| Claude 채팅 | 폴더 ZIP 생성·검사 pass | not_run: 인증된 Claude 호출 환경 없음; 실제 UI 미점검 | not_run | not_run | not_run |
+| Claude Cowork | 계정 스킬 경로 문서 확인 | not_run: Cowork 세션 없음 | not_run | not_run | not_run |
+| Claude Code | `.claude/skills/job-research/` 복사 시험 pass | not_run: claude 실행파일 없음 | not_run | not_run | not_run |
+| Gemini 앱 | 루트 ZIP 생성·검사 pass | not_run: 인증된 Gemini 호출 환경 없음; 실제 UI 미점검 | not_run | not_run | not_run |
+| Gemini CLI | `.gemini/skills/job-research/` 복사 시험 pass | not_run: gemini 실행파일 없음 | not_run | not_run | not_run |
+| 세 공급자 API / 제3자 호스트 | 직접 지침 주입 가능 형태 | not_run: API 인증/별도 런타임 없음; 유료 호출 미실행 | not_run | not_run | not_run |
 
-## 설치 형식
+Work의 제어된 웹 없음/메모리 없음 조건은 기능 제한을 준 행동 시험이다. 해당 계정에 원래 도구가 없다는 증거가 아니다. `/proc` 경로 저장 실패도 의도한 합성 실패 사례이며 서비스 장애 시험이 아니다.
 
-- OpenAI 공식 개발 문서: 표준 skill 폴더와 로컬 `.agents/skills`, 공개 배포용 plugin 경로를 안내한다. 이 소스는 root `plugin.json`과 호환용 `.codex-plugin/plugin.json`을 포함한다. 공개 디렉터리 승인/등록은 별도 작업이며 이 파일 생성이 설치 성공은 아니다.
-- ChatGPT Help는 Skills 제공/설치가 계정·워크스페이스·제품에 따라 달라진다고 명시한다. 특정 플랜만 보고 현재 계정의 버튼을 보장하지 않는다.
-- Claude 공식 Help: skill 폴더 ZIP 업로드 경로와 실행 설정을 안내한다. Code 문서의 로컬·계정·Cowork/클라우드 경로가 서로 다르므로 로컬 설치를 원격 설치로 일반화하지 않는다.
-- Gemini 앱 최신 직접 열람 문서: `SKILL.md` 및 참고파일 업로드를 안내한다. 검색 색인에는 이전 Spark 한정 설명이 남아 있어, UI와 최신 원문을 확인해야 한다. 스크립트 외부 웹 요청 제한이 있으므로 본 패키지의 보조 스크립트는 오프라인으로만 동작한다. 실제 웹검색은 호스트가 제공하는 허용 도구를 쓴다.
-- Gemini CLI 공식 문서: skill 디렉터리와 로컬/저장소 설치를 안내한다. `.agents/skills` 별칭도 있으나 본 설치기는 별도 `.gemini/skills`를 사용한다. 같은 이름의 중복 설치·우선순위는 실제 런타임에서 확인한다.
+## 제공 형식과 공식 근거
 
-## 최소 기능과 점진적 기능 활용
+- OpenAI: 공통 skill 폴더와 `.agents/skills`, root `plugin.json` 및 `.codex-plugin/plugin.json` 호환 포장을 제공한다. 공개 디렉터리 등록과 GitHub 업로드는 별개다. 실제 Work 개인 스킬 설치에 사용한 검증기에서는 최상위 `compatibility` 필드가 거부되어 같은 내용을 본문으로 옮겼다. 이것은 모든 표준 호스트가 그 필드를 금지한다는 뜻이 아니다.
+- Claude 채팅: 공식 안내의 Customize → Skills → Upload와 폴더 ZIP 구성을 대조했다. 실행 및 조직 정책에 따라 허용 여부가 달라진다. Cowork/클라우드는 로컬 폴더를 복사한 결과로 설치를 증명할 수 없다.
+- Gemini 앱: 공식 원문에서 주 폴더의 `SKILL.md`, 폴더/ZIP 업로드를 확인했다. 실제 계정 메뉴·제공 여부는 미확인이다. CLI는 별도 `.gemini/skills` 또는 `gemini skills install` 경로다.
+- 단일 파일: `portable/JOB_RESEARCH.md`만 읽는 새 Work 세션에서 제공 공고 분석과 선택 공고 인계를 실행했다. 다른 앱의 첨부 UI·자동 호출·장기기억 성공으로 확대하지 않는다.
 
-지침만 읽음 → 제공된 공고 분석.
-웹 검색/열람 추가 → 현재 공고 발견·검증.
-관련 메모리 추가 → 반복 입력 감소.
-허용 비공개 저장 추가 → 후보/미탐색/결정 이력 유지.
-허용 예약 추가 → 별도 설정된 주기 실행.
-이 기능들은 서로 대체되지 않으며, 계정 연결만으로 모두 존재한다고 보지 않는다.
-풍부한 환경에서는 그 도구를 적극 활용한다. 낮은 환경에 맞춰 전체 기능을 인위적으로 제한하지 않는다.
+## 불가능한 환경의 최소 수동 확인
 
-## 호환성 공개 규칙
+1. 해당 앱/CLI에서 스킬 또는 단일 파일을 불러오고 실제 읽힌 버전과 참고파일을 확인한다.
+2. 합성 인물로 자연어 요청 후 공개 공고와 지원 URL의 실제 열람 기록을 남긴다.
+3. 메모리 충분/불충분/없음, 웹 없음, 저장 실패를 각각 구분한다.
+4. 선택한 한 공고만 같은 대화 준비 또는 새 대화 인계로 이어간다.
+5. 저장은 새 세션 재읽기, 예약은 별도 승인된 일회성 시험과 전달 확인이 있어야 pass로 바꾼다. 기존 개인 예약을 시험용으로 수정하지 않는다.
 
-문서 호환 / 패키지 검사 통과 / 로컬 설치 복사 시험 / 실제 호스트 로딩 /
-실제 웹조사 / 메모리·저장 / 예약·알림을 각각 기록한다.
-미실행 항목은 not_run. 계정에서 막힌 경우 blocked. 한 호스트 통과를 다른 호스트 통과로 확대하지 않는다.
-실제 환경이 없으면 소스·패키지는 제공하되 ‘모든 환경 검증 완료’라고 표현하지 않는다.
-
-공식 출처 URL과 확인 범위는 [sources.md](sources.md)에 있다.
+원문 근거는 [sources.md](sources.md), 실제 결과와 남은 제약은 [validation.md](validation.md)에 있다. **다른 호스트 미검증이 남아 RC/개발 프리뷰다.**

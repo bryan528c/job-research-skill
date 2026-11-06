@@ -1,0 +1,21 @@
+{
+  "scope": "fixed_synthetic_corpus_only",
+  "observed_recall": 1.0,
+  "recommendation_recall": 1.0,
+  "recommendation_precision": 1.0,
+  "missed_gold_job_ids": [],
+  "false_exclusion_job_ids": [],
+  "false_recommendation_job_ids": [],
+  "lost_in_report_job_ids": [],
+  "check_job_mismatch_ids": [],
+  "trace_output_consistency_checked": true,
+  "trace_received": true,
+  "note": "Fixture output hashes and observation IDs can be checked, but are not host authentication. No open-web or production recall claim.",
+  "source_operations": 47,
+  "report_characters": 2794,
+  "new_session": true,
+  "prior_conversation_shared": false,
+  "oracle_files_copied_to_run_workspace": false,
+  "isolation": "Separate working folders and instructions; shared filesystem, not a security sandbox",
+  "post_report_operations_excluded": 0
+}

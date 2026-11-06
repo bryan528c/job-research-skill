@@ -6,6 +6,14 @@ The user should understand what changed, what is worth applying to, and what to 
 
 There is no compulsory table, dashboard, word budget, or item cap. Default to a short heading, one conclusion, compact opportunity entries, and one next action. Omit empty sections. Use host-supported citations or direct source links when allowed; retain the actual application destination when relevant.
 
+Keep the default answer focused on actionable roles and their decisive risks. Exclusion
+logs, source-by-source explanations and investigation history belong in working notes,
+not an appendix to every report. Mention an excluded role only when the user named it,
+its changed status requires action, or its exclusion explains a material limitation.
+State shared constraints once; keep each check-first entry to the fit and decisive
+unknown, without repeating the entire job description. Preserve all worthwhile roles,
+direct links and decision-changing caveats; shorten explanation before removing a role.
+
 ## Opportunity entry
 
 **Employer — exact role | verified deadline**

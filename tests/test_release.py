@@ -4,8 +4,11 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from zipfile import ZipFile
@@ -31,9 +34,11 @@ class PackageTests(unittest.TestCase):
         s=(ROOT/'skills/job-research/SKILL.md').read_text()
         f=re.match(r'\A---\n(.*?)\n---\n',s,re.S).group(1)
         self.assertIn('name: job-research',f)
-        for key,limit in [('description',1024),('compatibility',500)]:
+        for key,limit in [('description',1024)]:
             value=re.search(key+r': "([^\n]+)"',f).group(1)
             self.assertTrue(0<len(value)<=limit)
+        self.assertNotIn('\ncompatibility:',f)
+        self.assertIn('Live research needs web tools',s)
     def test_core_version(self):
         self.assertIn(f'version: "{Q.VERSION}"',(ROOT/'skills/job-research/SKILL.md').read_text())
         self.assertEqual((ROOT/'VERSION').read_text().strip(),Q.VERSION)
@@ -114,6 +119,83 @@ class PackageTests(unittest.TestCase):
     def test_build_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):B.write_zip(Path(d)/'x.zip',[('../escape',b'x')])
+
+    def test_build_manifest_does_not_adopt_unrelated_archive(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d)/'unrelated.zip').write_bytes(b'not a release')
+            manifest=B.build(ROOT,Path(d))
+            self.assertNotIn('unrelated.zip',manifest['artifacts'])
+
+    def test_build_rejects_symlink_in_payload(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            shutil.copytree(ROOT/'skills',root/'skills')
+            (root/'skills/job-research/references/linked.md').symlink_to(ROOT/'README.md')
+            with self.assertRaises(ValueError):B.build(root)
+
+    def test_package_manifest_refreshes_source_hash_without_private_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'VERSION').write_text('0.0.0-rc.1')
+            (root/'README.md').write_text('first')
+            (root/'private').mkdir();(root/'private/memory.txt').write_text('synthetic secret')
+            first=B.write_package_manifest(root)
+            (root/'README.md').write_text('second');second=B.write_package_manifest(root)
+            self.assertNotEqual(first['files']['README.md'],second['files']['README.md'])
+            self.assertFalse(any('private' in key for key in second['files']))
+
+    def _release_copy(self,root):
+        import shutil
+        for name in ['VERSION','LICENSE','plugin.json','PACKAGE_MANIFEST.json']:
+            shutil.copy2(ROOT/name,root/name)
+        for name in ['skills','scripts','.codex-plugin']:
+            shutil.copytree(ROOT/name,root/name,ignore=shutil.ignore_patterns('__pycache__'))
+        B.build(root);B.write_package_manifest(root)
+
+    def test_verify_release_rejects_stale_source_inventory(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self._release_copy(root)
+            (root/'scripts/install_skill.py').write_text('changed')
+            p=subprocess.run([sys.executable,str(root/'scripts/verify_release.py')],capture_output=True,text=True)
+            self.assertNotEqual(p.returncode,0);self.assertIn('source manifest stale',p.stderr)
+
+    def test_verify_release_rejects_changed_zip(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self._release_copy(root)
+            (root/'dist/job-research-claude.zip').write_bytes(b'changed')
+            p=subprocess.run([sys.executable,str(root/'scripts/verify_release.py')],capture_output=True,text=True)
+            self.assertNotEqual(p.returncode,0);self.assertIn('archive hash mismatch',p.stderr)
+
+    def test_verify_release_rejects_plugin_version_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self._release_copy(root)
+            p=root/'plugin.json';data=json.loads(p.read_text());data['version']='0.0.0';p.write_text(json.dumps(data))
+            result=subprocess.run([sys.executable,str(root/'scripts/verify_release.py')],capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0);self.assertIn('plugin version mismatch',result.stderr)
+
+    def test_license_survives_every_distribution_format(self):
+        license_bytes=(ROOT/'LICENSE').read_bytes()
+        with tempfile.TemporaryDirectory() as d:
+            B.build(ROOT,Path(d))
+            for name,path in [('job-research-upload-root.zip','LICENSE.txt'),
+                              ('job-research-claude.zip','job-research/LICENSE.txt'),
+                              ('job-research-openai-plugin.zip','job-research/skills/job-research/LICENSE.txt')]:
+                with ZipFile(Path(d)/name) as z:
+                    self.assertEqual(z.read(path),license_bytes)
+                    if 'openai-plugin' in name:
+                        self.assertEqual(z.read('job-research/LICENSE'),license_bytes)
+        self.assertTrue(B.make_portable(ROOT).endswith(license_bytes.decode()))
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self._release_copy(root)
+            self.assertIn('LICENSE',load_manifest:=json.loads((root/'PACKAGE_MANIFEST.json').read_text())['files'])
+            self.assertIn('skills/job-research/LICENSE.txt',load_manifest)
+
+    def test_build_rejects_divergent_license(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);self._release_copy(root)
+            (root/'skills/job-research/LICENSE.txt').write_text('not the approved license')
+            with self.assertRaisesRegex(ValueError,'license differs'):
+                B.build(root)
 
 class LinkAndDeadlineTests(unittest.TestCase):
     def test_accept_real_shaped_job_query(self):
@@ -315,7 +397,7 @@ class InstallerAndGraderTests(unittest.TestCase):
             with self.assertRaises(ValueError):I.install('codex',Path(d),True)
     def test_grader_detects_miss_and_report_loss(self):
         o=load('tests/oracles/discovery.expected.json');one=o['recommend'][0]
-        capture={'observed_job_ids':[one],'recommended_job_ids':[one],'check_job_ids':[],
+        capture={'observed_job_ids':[one,o['recommend'][1]],'recommended_job_ids':[one],'check_job_ids':[],
                  'excluded_job_ids':[o['recommend'][1]],'report_job_ids':[]}
         result=G.grade(capture,o)
         self.assertEqual(result['lost_in_report_job_ids'],[one])
@@ -335,5 +417,44 @@ class InstallerAndGraderTests(unittest.TestCase):
         pages=load('tests/fixtures/discovery/pages.json')['pages']
         self.assertEqual(sum(p['job_id']=='j01' for p in pages),2)
         self.assertIn('2030-02-01',next(p['body'] for p in pages if p['job_id']=='j03'))
+
+    def test_installer_rejects_symlink_source_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            link=Path(d)/'source';link.symlink_to(ROOT/'skills/job-research',target_is_directory=True)
+            with self.assertRaises(ValueError):I.install('codex',Path(d)/'project',True,link)
+
+    def test_installer_rejects_symlink_above_project(self):
+        with tempfile.TemporaryDirectory() as d,tempfile.TemporaryDirectory() as other:
+            link=Path(d)/'parent';link.symlink_to(Path(other),target_is_directory=True)
+            with self.assertRaises(ValueError):I.install('codex',link/'project',True)
+            self.assertFalse((Path(other)/'project').exists())
+
+    def test_grader_rejects_unobserved_decision(self):
+        c={k:[] for k in ['observed_job_ids','recommended_job_ids','check_job_ids','excluded_job_ids','report_job_ids']}
+        c['recommended_job_ids']=['j01']
+        with self.assertRaises(ValueError):G.grade(c,load('tests/oracles/discovery.expected.json'))
+
+    def test_grader_rejects_conflicting_decision(self):
+        c={'observed_job_ids':['j01'],'recommended_job_ids':['j01'],'check_job_ids':['j01'],
+           'excluded_job_ids':[],'report_job_ids':['j01']}
+        with self.assertRaises(ValueError):G.grade(c,load('tests/oracles/discovery.expected.json'))
+
+    def test_fixture_records_actual_output_and_grader_checks_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            trace=Path(d)/'trace.jsonl'
+            env={**os.environ,'JOB_RESEARCH_FIXTURE_TRACE':str(trace)}
+            p=subprocess.run([sys.executable,str(ROOT/'tests/fixture_browser.py'),'open','p01'],env=env,capture_output=True,text=True,check=True)
+            events=[json.loads(line) for line in trace.read_text().splitlines()]
+            self.assertEqual(events[0]['output'],json.loads(p.stdout))
+            c={'observed_job_ids':['j01'],'recommended_job_ids':['j01'],'check_job_ids':[],
+               'excluded_job_ids':[],'report_job_ids':['j01']}
+            self.assertTrue(G.grade(c,load('tests/oracles/discovery.expected.json'),events)['trace_output_consistency_checked'])
+            events[0]['output']['results'][0]['job_id']='j02'
+            with self.assertRaises(ValueError):G.grade(c,load('tests/oracles/discovery.expected.json'),events)
+
+    def test_grader_rejects_trace_observation_mismatch(self):
+        c={'observed_job_ids':['j01'],'recommended_job_ids':['j01'],'check_job_ids':[],
+           'excluded_job_ids':[],'report_job_ids':['j01']}
+        with self.assertRaises(ValueError):G.grade(c,load('tests/oracles/discovery.expected.json'),[])
 
 if __name__=='__main__':unittest.main(verbosity=2)

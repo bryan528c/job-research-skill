@@ -2,7 +2,7 @@
 
 **“나한테 맞는 공고 찾아줘.” → 근거 있는 짧은 추천과 직접 링크 → 선택한 공고만 지원 준비.**
 
-`0.2.0-rc.1` · 최종 인계용 릴리스 후보 · 실제 GPT/Claude/Gemini 세션 검증은 아직 미실행
+`0.2.0-rc.2` · 개발 프리뷰 · ChatGPT Work 명시 호출/실제 웹조사 일부 검증 · 다른 호스트 미실행
 
 ## 가장 쉬운 시작
 
@@ -51,16 +51,17 @@
 
 [실제 검증 결과](docs/validation.md)와 [검토·한계](docs/final-review.ko.md)를 확인한다.
 정적/단위/합성 데이터 테스트와 실제 모델·실제 시장 성능을 분리한다.
-행동 평가 정의 64건은 모델 실행 결과가 아니다. 평가 정답은 설치 패키지에 넣지 않는다.
+행동 평가 정의 64건은 실행 결과가 아니다. 별도 새 세션에서 수행한 실제 모델 사례와 도구 기록은 검증 문서에 구분했다. 평가 정답은 설치 패키지에 넣지 않는다.
 이 버전은 실환경 미검증 부분을 명시하는 개발 프리뷰로만 소개해야 한다.
 개인 메모리·지원 기록·이력서·토큰은 포함하지 않는다. [개인정보](PRIVACY.md) · [보안](SECURITY.md)
-공개 라이선스는 소유자의 선택 대기다. [공개 전 확인](LICENSE-CHOICE.md)
+[MIT 라이선스](LICENSE) · 소유자가 RC 공개를 승인했다. [배포 상태](docs/github-readiness.ko.md)
 
 ## 개발자/Work에 넘길 때
 
 [WORK_HANDOFF.ko.txt](WORK_HANDOFF.ko.txt)를 이 소스 ZIP과 함께 전달한다.
 기본 검사: `python -m unittest discover -s tests -v`
 재빌드: `python scripts/build_release.py`
+배포 무결성 확인: `python scripts/verify_release.py`
 보조 코드만 Python 3.10+ 표준 라이브러리를 사용한다. 일반 사용자는 실행할 필요가 없다.
 
 ## English

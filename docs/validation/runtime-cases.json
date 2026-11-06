@@ -1,0 +1,70 @@
+{
+  "version": "0.2.0-rc.2",
+  "checked_on": "2026-11-06",
+  "timezone": "Asia/Seoul",
+  "predefined_64_scenario_suite": "not_run; these are separate targeted runs, not a completed scenario suite",
+  "cases": [
+    {
+      "id": "fixed-corpus-baseline",
+      "status": "pass",
+      "scope": "synthetic baseline, not skill run",
+      "result": "All 9 gold recommendations found; no false exclusions or report loss."
+    },
+    {
+      "id": "fixed-corpus-skill",
+      "status": "pass",
+      "scope": "synthetic discovery, explicit native skill loading",
+      "result": "All 9 gold recommendations found; no false exclusions or report loss."
+    },
+    {
+      "id": "selected-same-chat",
+      "status": "pass",
+      "scope": "follow-up in the same synthetic run",
+      "result": "Reopened p01, preserved report identity and files, did not invent questions or produce unwanted handoff."
+    },
+    {
+      "id": "portable-selected-handoff-save-failure",
+      "status": "pass",
+      "scope": "standalone instruction file, no web, synthetic supplied job",
+      "result": "One selected-job handoff, unverified URLs and date-only deadline preserved; real /proc write attempted once and failed, no durability claim."
+    },
+    {
+      "id": "missing-context-and-web",
+      "status": "pass",
+      "scope": "controlled capabilities",
+      "result": "No invented jobs; asks only role/work interests, career evidence and location."
+    },
+    {
+      "id": "memory-sufficient-ambiguous-fixture",
+      "status": "inconclusive",
+      "scope": "synthetic memory file",
+      "result": "English field not available was ambiguous between unknown and unable. Did not count as model failure or pass. A new session used an explicit user statement."
+    },
+    {
+      "id": "memory-incomplete",
+      "status": "pass",
+      "scope": "synthetic memory file, not provider memory API",
+      "result": "Respected latest internship preference without waiving start date; asks only unknown negotiation ability."
+    },
+    {
+      "id": "memory-sufficient-explicit",
+      "status": "pass",
+      "scope": "fresh session with explicit synthetic user statement",
+      "result": "B recommended; A start-date conflict and C explicit language mismatch excluded; no repeat intake."
+    },
+    {
+      "id": "live-web-initial",
+      "status": "partial",
+      "scope": "one employer, synthetic applicant; real web tools",
+      "result": "Search, employer job pages and application-route observations recorded. No confirmed-fit recommendation manufactured. Default report included excessive exclusion detail; reporting reference amended."
+    },
+    {
+      "id": "live-web-final",
+      "status": "partial",
+      "scope": "fresh real-web session after reporting-reference change; same employer and synthetic applicant",
+      "result": "10 actual web tool responses; both public application forms opened. No confirmed-fit recommendation manufactured. Default report still includes a rejected-role table and long explanations: brief-output consistency remains unresolved."
+    }
+  ],
+  "fresh_sessions": 9,
+  "same_session_followups": 1
+}

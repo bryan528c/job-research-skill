@@ -16,13 +16,19 @@ test_unknown_recommendation_caught (test_release.CoverageTests.test_unknown_reco
 test_unobserved_evidence_id (test_release.CoverageTests.test_unobserved_evidence_id) ... ok
 test_version_mismatch (test_release.CoverageTests.test_version_mismatch) ... ok
 test_fixture_old_open_and_duplicate_present (test_release.InstallerAndGraderTests.test_fixture_old_open_and_duplicate_present) ... ok
+test_fixture_records_actual_output_and_grader_checks_it (test_release.InstallerAndGraderTests.test_fixture_records_actual_output_and_grader_checks_it) ... ok
 test_fixture_search_does_not_return_oracle (test_release.InstallerAndGraderTests.test_fixture_search_does_not_return_oracle) ... ok
 test_grader_detects_miss_and_report_loss (test_release.InstallerAndGraderTests.test_grader_detects_miss_and_report_loss) ... ok
+test_grader_rejects_conflicting_decision (test_release.InstallerAndGraderTests.test_grader_rejects_conflicting_decision) ... ok
 test_grader_rejects_fabricated_job (test_release.InstallerAndGraderTests.test_grader_rejects_fabricated_job) ... ok
+test_grader_rejects_trace_observation_mismatch (test_release.InstallerAndGraderTests.test_grader_rejects_trace_observation_mismatch) ... ok
+test_grader_rejects_unobserved_decision (test_release.InstallerAndGraderTests.test_grader_rejects_unobserved_decision) ... ok
 test_installer_dry_run_no_writes (test_release.InstallerAndGraderTests.test_installer_dry_run_no_writes) ... ok
 test_installer_each_host_copy (test_release.InstallerAndGraderTests.test_installer_each_host_copy) ... ok
 test_installer_no_overwrite (test_release.InstallerAndGraderTests.test_installer_no_overwrite) ... ok
+test_installer_rejects_symlink_above_project (test_release.InstallerAndGraderTests.test_installer_rejects_symlink_above_project) ... ok
 test_installer_rejects_symlink_destination (test_release.InstallerAndGraderTests.test_installer_rejects_symlink_destination) ... ok
+test_installer_rejects_symlink_source_root (test_release.InstallerAndGraderTests.test_installer_rejects_symlink_source_root) ... ok
 test_installer_rejects_unknown_host (test_release.InstallerAndGraderTests.test_installer_rejects_unknown_host) ... ok
 test_accept_real_shaped_job_query (test_release.LinkAndDeadlineTests.test_accept_real_shaped_job_query) ... ok
 test_check_unverified_allowed_labeled (test_release.LinkAndDeadlineTests.test_check_unverified_allowed_labeled) ... ok
@@ -43,14 +49,19 @@ test_reject_private_addresses (test_release.LinkAndDeadlineTests.test_reject_pri
 test_reject_query_secrets (test_release.LinkAndDeadlineTests.test_reject_query_secrets) ... ok
 test_reject_token_fragment (test_release.LinkAndDeadlineTests.test_reject_token_fragment) ... ok
 test_verified_link_requires_observation_time (test_release.LinkAndDeadlineTests.test_verified_link_requires_observation_time) ... ok
+test_build_manifest_does_not_adopt_unrelated_archive (test_release.PackageTests.test_build_manifest_does_not_adopt_unrelated_archive) ... ok
+test_build_rejects_divergent_license (test_release.PackageTests.test_build_rejects_divergent_license) ... ok
+test_build_rejects_symlink_in_payload (test_release.PackageTests.test_build_rejects_symlink_in_payload) ... ok
 test_build_rejects_traversal (test_release.PackageTests.test_build_rejects_traversal) ... ok
 test_claude_folder_layout (test_release.PackageTests.test_claude_folder_layout) ... ok
 test_core_not_tool_whitelist (test_release.PackageTests.test_core_not_tool_whitelist) ... ok
 test_core_version (test_release.PackageTests.test_core_version) ... ok
 test_coverage_required_for_broad (test_release.PackageTests.test_coverage_required_for_broad) ... ok
 test_frontmatter (test_release.PackageTests.test_frontmatter) ... ok
+test_license_survives_every_distribution_format (test_release.PackageTests.test_license_survives_every_distribution_format) ... ok
 test_minimal_plugins (test_release.PackageTests.test_minimal_plugins) ... ok
 test_offline_helper_has_no_network_client (test_release.PackageTests.test_offline_helper_has_no_network_client) ... ok
+test_package_manifest_refreshes_source_hash_without_private_files (test_release.PackageTests.test_package_manifest_refreshes_source_hash_without_private_files) ... ok
 test_plugin_zip_has_no_tests_or_oracles (test_release.PackageTests.test_plugin_zip_has_no_tests_or_oracles) ... ok
 test_portable_no_relative_reference_dependencies (test_release.PackageTests.test_portable_no_relative_reference_dependencies) ... ok
 test_reproducible_artifacts (test_release.PackageTests.test_reproducible_artifacts) ... ok
@@ -59,6 +70,9 @@ test_selected_job_branch_present (test_release.PackageTests.test_selected_job_br
 test_skill_local_links (test_release.PackageTests.test_skill_local_links) ... ok
 test_source_docs_record_runtime_limits (test_release.PackageTests.test_source_docs_record_runtime_limits) ... ok
 test_upload_root_layout_and_bytes (test_release.PackageTests.test_upload_root_layout_and_bytes) ... ok
+test_verify_release_rejects_changed_zip (test_release.PackageTests.test_verify_release_rejects_changed_zip) ... ok
+test_verify_release_rejects_plugin_version_drift (test_release.PackageTests.test_verify_release_rejects_plugin_version_drift) ... ok
+test_verify_release_rejects_stale_source_inventory (test_release.PackageTests.test_verify_release_rejects_stale_source_inventory) ... ok
 test_archived_closed_submission_not_recommended_again (test_release.ReportAndHandoffTests.test_archived_closed_submission_not_recommended_again) ... ok
 test_check_separate (test_release.ReportAndHandoffTests.test_check_separate) ... ok
 test_display_compaction_does_not_drop_jobs (test_release.ReportAndHandoffTests.test_display_compaction_does_not_drop_jobs) ... ok
@@ -82,6 +96,6 @@ test_submitted_not_new_suggestion (test_release.ReportAndHandoffTests.test_submi
 test_unknown_selection_no_guess (test_release.ReportAndHandoffTests.test_unknown_selection_no_guess) ... ok
 
 ----------------------------------------------------------------------
-Ran 82 tests in 0.223s
+Ran 96 tests in 0.337s
 
 OK

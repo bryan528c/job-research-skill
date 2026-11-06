@@ -1,34 +1,100 @@
 {
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0-rc.2",
   "checked_on": "2026-11-06",
+  "timezone": "Asia/Seoul",
+  "release_status": "RC / development preview",
   "local_unittest": {
-    "ran": 82,
-    "passed": 82
+    "baseline_ran": 82,
+    "baseline_passed": 82,
+    "ran": 96,
+    "passed": 96,
+    "python_version": "3.12.14"
   },
   "core_research_removal_detected": true,
   "yaml_parse": "pass",
+  "work_install_validator": "pass after relocating unsupported top-level compatibility field to body",
   "native_upload_payload_consistency": "pass",
   "deterministic_build": "pass",
-  "local_skill_copy_test_hosts": [
-    "codex path",
-    "claude-code path",
-    "gemini-cli path"
-  ],
-  "model_behavior_scenarios": {
-    "defined": 64,
-    "executed": 0,
-    "status": "not_run"
+  "source_manifest_integrity": "pass",
+  "local_copy_tests": {
+    "codex": "pass; not CLI execution",
+    "claude-code": "pass; not CLI execution",
+    "gemini-cli": "pass; not CLI execution"
   },
-  "live_host_tests": {
-    "ChatGPT/Work": "not_run",
-    "Codex": "not_run",
-    "Claude/Cowork": "not_run",
-    "Claude Code": "not_run",
-    "Gemini App": "not_run",
-    "Gemini CLI": "not_run"
+  "model_execution": {
+    "fresh_sessions": 9,
+    "same_session_followups": 1,
+    "predefined_64_scenarios_executed": 0,
+    "predefined_64_scenarios_status": "not_run",
+    "cases": "runtime-cases.json",
+    "fixed_corpus": "baseline and skill each 9/9 gold recommendations; no false exclusions/report loss; no demonstrated research-quality improvement"
   },
-  "live_web_recruitment_quality": "not_measured",
-  "repository_publish": "not_performed",
-  "scheduling_changes": "not_performed",
-  "license": "owner_decision_pending"
+  "host_results": {
+    "ChatGPT Work": {
+      "personal_skill_saved_and_remote_verified": "pass",
+      "explicit_skill_load_and_reference_read": "pass",
+      "automatic_activation": "not_run",
+      "ZIP_upload_UI": "not_run",
+      "real_web_source_and_apply_page_reads": "pass in narrow employer scope",
+      "synthetic_memory_file_behavior": "pass",
+      "native_account_memory": "not_run; no synthetic account memory store provisioned; real personal memory not used",
+      "local_artifact_readback": "pass",
+      "durable_research_state": "not_run; local files do not establish future recall",
+      "controlled_save_failure_behavior": "pass; actual one-attempt /proc write failure",
+      "brief_output_consistency": "partial; rejected-role detail still too long in live rerun",
+      "scheduler_notification": "not_run; no test schedule created, existing schedules untouched"
+    },
+    "ChatGPT Chat / GPT": {
+      "status": "not_run",
+      "reason": "No separate Chat/GPT execution surface in this runner"
+    },
+    "Codex CLI": {
+      "status": "not_run",
+      "reason": "codex executable absent"
+    },
+    "Codex Desktop / IDE": {
+      "status": "not_run",
+      "reason": "No desktop/IDE runtime exposed"
+    },
+    "Claude Chat": {
+      "status": "not_run",
+      "reason": "No authenticated Claude runtime available to this runner; account UI not inspected"
+    },
+    "Claude Cowork": {
+      "status": "not_run",
+      "reason": "No Cowork session exposed"
+    },
+    "Claude Code": {
+      "status": "not_run",
+      "reason": "claude executable absent"
+    },
+    "Gemini App": {
+      "status": "not_run",
+      "reason": "No authenticated Gemini runtime available to this runner; account UI not inspected"
+    },
+    "Gemini CLI": {
+      "status": "not_run",
+      "reason": "gemini executable absent"
+    },
+    "provider APIs": {
+      "status": "not_run",
+      "reason": "No provider API credentials configured; no paid calls made"
+    }
+  },
+  "github": {
+    "repository_creation": "pass; new owner-approved public repository",
+    "reason": "Authentication completed; repository created through UI; source writes through connected GitHub API",
+    "target_actual_write": "pass; source tree, commit and branches created",
+    "existing_repository_permissions": "metadata read only; not treated as target write proof",
+    "remote_push": "Git data API import; original local commit IDs retained in Git bundle",
+    "PR": "pending",
+    "actions_remote_run": "pending",
+    "repository_url": "https://github.com/bryan528c/job-research-skill",
+    "original_source_tree_match": "pass; 60de2d4a877222ae5e2cf6d545cc620e1e71858d"
+  },
+  "privacy_scan": "pass for known personal markers and high-confidence secret patterns; not exhaustive DLP",
+  "scheduling_changes": "none",
+  "license": "MIT applied; owner approved 2026-11-06",
+  "publication": "public repository created; rc.2 PR and release in progress",
+  "license_distribution_integrity": "pass: same MIT notice in source, native skill, three ZIPs and portable instructions"
 }

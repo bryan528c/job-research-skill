@@ -16,7 +16,7 @@ import sys
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
-VERSION = '0.2.0-rc.1'
+VERSION = '0.2.0-rc.2'
 
 class ValidationError(ValueError):
     """An internal record is missing or inconsistent; ask the host to resolve it."""

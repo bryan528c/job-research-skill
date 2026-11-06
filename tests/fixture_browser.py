@@ -3,7 +3,8 @@
 Use search/open/inventory to evaluate an agent in a controlled small job universe.
 """
 from pathlib import Path
-import argparse,json,re
+import argparse,hashlib,json,os,re
+from datetime import datetime,timezone
 
 ROOT=Path(__file__).resolve().parent
 
@@ -29,6 +30,17 @@ def main():
     if a.cmd=='search': result=search(pages,a.query,a.field)
     elif a.cmd=='open': result=[p for p in pages if p['page_id']==a.page_id]
     else: result=[{k:p[k] for k in ['page_id','title','employer','url']} for p in pages if p['employer']==a.employer]
-    print(json.dumps({'synthetic':True,'results':result},ensure_ascii=False,indent=2))
+    output={'synthetic':True,'results':result}
+    # Evaluator configures this outside the agent prompt. Record actual source
+    # operations and returned bytes, not the agent's retrospective claim.
+    trace=os.environ.get('JOB_RESEARCH_FIXTURE_TRACE')
+    if trace:
+        payload=json.dumps(output,ensure_ascii=False,sort_keys=True)
+        event={'timestamp':datetime.now(timezone.utc).isoformat(),
+               'operation':a.cmd,'arguments':vars(a),'output':output,
+               'output_sha256':hashlib.sha256(payload.encode()).hexdigest()}
+        with Path(trace).open('a',encoding='utf-8') as f:
+            f.write(json.dumps(event,ensure_ascii=False)+'\n')
+    print(json.dumps(output,ensure_ascii=False,indent=2))
 
 if __name__=='__main__': main()

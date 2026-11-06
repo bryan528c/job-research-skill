@@ -31,3 +31,11 @@ Search snippets and current direct pages can differ. At validation/release time 
 actual latest official page, note the product/account scope, and inspect the host UI/help.
 Do not force an old menu path, grant network access or promise unavailable memory.
 No claim about actual vacancy completeness is derived from these product documents.
+
+## rc.2 direct-page recheck
+
+On 2026-11-06 the OpenAI build-skills and plugin-packaging pages, Claude skill-upload
+and Code skill pages, Gemini App skill-import and Gemini CLI skill pages above were
+opened again. They support the documented formats and separate surface distinctions.
+This check does not establish the user's Claude/Gemini account access. The Work native
+installation was verified through the provided skill workflow rather than an upload UI.

@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0-rc.2",
   "status": "not_executed_against_a_model",
   "note": "합성 행동 평가 명세. 정적 검사는 사례 형식만 검사하며, 예상 행동의 실제 달성을 증명하지 않는다.",
   "cases": [

@@ -13,5 +13,5 @@ run-data/
 *.key
 .DS_Store
 .pytest_cache/
-dist/
 validation-local/
+model-runs/

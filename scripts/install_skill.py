@@ -17,13 +17,13 @@ def install(host:str,base:Path,apply:bool=False,source:Path|None=None)->Path:
     source=source or ROOT/'skills/job-research'
     if host not in PREFIX: raise ValueError('choose codex, claude-code or gemini-cli')
     if not (source/'SKILL.md').is_file(): raise ValueError('source SKILL.md missing')
-    if any(p.is_symlink() for p in source.rglob('*')): raise ValueError('source symlinks not accepted')
+    if source.is_symlink() or any(p.is_symlink() for p in source.rglob('*')):
+        raise ValueError('source symlinks not accepted')
     base=base.expanduser().absolute()
     target=base/PREFIX[host]/'skills'/'job-research'
     # Do not follow an installation path symlink into an unexpected directory.
     for parent in [target,*target.parents]:
         if parent.is_symlink(): raise ValueError('target or parent symlink; review destination manually')
-        if parent==base: break
     if target.exists(): raise FileExistsError(f'{target} already exists; compare versions, do not overwrite')
     if apply:
         target.parent.mkdir(parents=True,exist_ok=True)

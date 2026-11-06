@@ -1,0 +1,119 @@
+{
+  "date": "2026-11-06",
+  "scope": "actual public-web response bytes; no personal account tools used",
+  "raw_responses": "reviewed in working environment; not distributed in source or public release",
+  "runs": {
+    "live-web": {
+      "tool_calls": 10,
+      "report_characters": 2197,
+      "responses": [
+        {
+          "filename": "tool-001.json",
+          "bytes": 15919,
+          "sha256": "78e9634a829035411dd212d8bdbcabaee26bf750cc9f438511cd27fd49704be5"
+        },
+        {
+          "filename": "tool-002.json",
+          "bytes": 6475,
+          "sha256": "9574e4b8b4bf502a5e47a5b235af734f9517e44b10f61daaf3c6c96b48c56379"
+        },
+        {
+          "filename": "tool-003.json",
+          "bytes": 29166,
+          "sha256": "ce43bc2461ee8f70c0b033ad9ffabf18a4539badaeba5c486975f083bd1b4db5"
+        },
+        {
+          "filename": "tool-004.json",
+          "bytes": 28973,
+          "sha256": "5e1aade95b4a7da47852b3d0e7e6cf9d77fcfe6000b59418e73736befdaf961b"
+        },
+        {
+          "filename": "tool-005.json",
+          "bytes": 24867,
+          "sha256": "24eab9f3ef9aa90a39afdcb68a9335657fb0906a1a352d80afb549d106454737"
+        },
+        {
+          "filename": "tool-006.json",
+          "bytes": 25509,
+          "sha256": "a0bfcc6eaf5c2695b30ca85d9f7f38281771f8da178163a8ee6d7ee9fc6c527d"
+        },
+        {
+          "filename": "tool-007.json",
+          "bytes": 19384,
+          "sha256": "717c612aca8aa6ce01db57bd9be4818d4f18d50ce6126cc4ac5a5d3496765dba"
+        },
+        {
+          "filename": "tool-008.json",
+          "bytes": 29348,
+          "sha256": "998bdcbf9274e947aa39ff663a9cba727844f628431c93d863c56dbc986089ec"
+        },
+        {
+          "filename": "tool-009.json",
+          "bytes": 30235,
+          "sha256": "2a8fe39fdc29c0ee03282f5354e50f980244f101a1dc2b8dd3ae75d4b94969b8"
+        },
+        {
+          "filename": "tool-010.json",
+          "bytes": 1859,
+          "sha256": "0fc93945e27f867cd2fb88adb809391f01306628d6fbefa8ee83ebdfe3857958"
+        }
+      ]
+    },
+    "live-web-final": {
+      "tool_calls": 10,
+      "report_characters": 2042,
+      "responses": [
+        {
+          "filename": "tool-001.json",
+          "bytes": 24641,
+          "sha256": "e1310b7b70675eef11a1727174e838468ad900764780ddbe930b9bef76a6b612"
+        },
+        {
+          "filename": "tool-002.json",
+          "bytes": 27366,
+          "sha256": "3e1acffc15a97fe3c242c81cf0d2a91d7bbf663677f3f8e2142459dbe9c209a6"
+        },
+        {
+          "filename": "tool-003.json",
+          "bytes": 29070,
+          "sha256": "12561680e3dc06fb21f0f14cf89bb95f70fb74300ed01c027a0191b5fc9f0cb1"
+        },
+        {
+          "filename": "tool-004.json",
+          "bytes": 30891,
+          "sha256": "874ba70296f02de4fd212cd92f6c005bf3e45945b9ff8bbb51e378af083ba075"
+        },
+        {
+          "filename": "tool-005.json",
+          "bytes": 29952,
+          "sha256": "fd9d5428c61608e2b1a11fe6cb289c01f6e0f9aabcd5f74b6ad42375089270ff"
+        },
+        {
+          "filename": "tool-006.json",
+          "bytes": 22436,
+          "sha256": "e300f6a206793ff21a133fe23d11fb3b3dc4755d70543097dc838e3d402056c7"
+        },
+        {
+          "filename": "tool-007.json",
+          "bytes": 27604,
+          "sha256": "659bbc536d3e10e733a8798b4c5b3c52863115b0b08d99c9f8c6eecdf64c42f5"
+        },
+        {
+          "filename": "tool-008.json",
+          "bytes": 28309,
+          "sha256": "730517a5054a5b8da1fb4ed6772c978a856e896d3981483e7ccfc4fb88e2ec85"
+        },
+        {
+          "filename": "tool-009.json",
+          "bytes": 28456,
+          "sha256": "e51f10835e79b48ca88703da238510380d35afd848269260f44b547471b7f9aa"
+        },
+        {
+          "filename": "tool-010.json",
+          "bytes": 647,
+          "sha256": "3f644a3a4c90adc6c00e6244f9ca28ccff7393b25f3580edde4c7ae6099f50a9"
+        }
+      ]
+    }
+  }
+}

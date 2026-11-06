@@ -87,14 +87,30 @@
     "target_actual_write": "pass; source tree, commit and branches created",
     "existing_repository_permissions": "metadata read only; not treated as target write proof",
     "remote_push": "Git data API import; original local commit IDs retained in Git bundle",
-    "PR": "pending",
-    "actions_remote_run": "pending",
+    "PR": "https://github.com/bryan528c/job-research-skill/pull/1",
+    "actions_remote_run": {
+      "status": "pass",
+      "run_id": 42156873339,
+      "commit": "de772138604e5aa1462e3cb3db89b8166ee7ebce",
+      "python": [
+        "3.10",
+        "3.13"
+      ],
+      "checks": [
+        "96 unit/regression checks",
+        "build",
+        "release integrity",
+        "rebuild leaves tracked artifacts unchanged"
+      ]
+    },
     "repository_url": "https://github.com/bryan528c/job-research-skill",
-    "original_source_tree_match": "pass; 60de2d4a877222ae5e2cf6d545cc620e1e71858d"
+    "original_source_tree_match": "pass; 60de2d4a877222ae5e2cf6d545cc620e1e71858d",
+    "release_source_tree_match": "pass; c6f74d2ef72bc9e633bb8d215c620877aeeaf688",
+    "release_LICENSE_readback": "pass"
   },
   "privacy_scan": "pass for known personal markers and high-confidence secret patterns; not exhaustive DLP",
   "scheduling_changes": "none",
   "license": "MIT applied; owner approved 2026-11-06",
-  "publication": "public repository created; rc.2 PR and release in progress",
+  "publication": "public RC source and PR available; see PR/Releases for final merge/tag state",
   "license_distribution_integrity": "pass: same MIT notice in source, native skill, three ZIPs and portable instructions"
 }

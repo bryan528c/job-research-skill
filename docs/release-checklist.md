@@ -50,5 +50,5 @@ and deliver useful artifacts even when a particular host/account is unavailable.
 - [ ] Independent 64-case suite, multiple seeds, held-out corpus, actual market-quality evaluation.
 - [ ] Other host installation, loading, web, real native memory, durable research state and notifications.
 - [x] Owner-approved public GitHub target created; actual original source tree/commit/branch write verified.
-- [ ] Run GitHub Actions on the target (configuration present; no remote execution claim).
+- [x] GitHub Actions run 42156873339 passed on Python 3.10 and 3.13; tests/build/hash/rebuild checks all succeeded.
 - [x] Owner approved public RC visibility and MIT; source, all installation ZIPs and the portable file include the license.

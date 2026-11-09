@@ -94,7 +94,7 @@
     "engine/tests/test_live_contracts.py": "657f77c96ddcf5a1296dc39b4ebc2ff8a2cccef1c4d265fa44cba5933a161415",
     "engine/tests/test_worker.py": "647c443e78dd702e03478f6eb36519094d9b2aac16139a9e399a890d42de5162",
     "engine/tools/demo.py": "52ecd96e9b2f51b0a33f06618ab0c663639e4f1eb55ef0f73d3dd9a416647f8c",
-    "engine/tools/mutation_check.py": "292f101a02117b2731c9b25f94fe8bb0135c621888666977a3d89dca0bc320a3",
+    "engine/tools/mutation_check.py": "4a47ad7d38819f4232e819adac2cca7ef302b1fc04bb729ceb46a60355e90c27",
     "engine/tools/scale_check.py": "2b051de52d5e25682801e2495bd89fe6eb56a6547463ce9172f1599897c1015d",
     "plugin.json": "4fc6ad8e0531327f7edafbef8722e1d3fda3b133e3dc556165d8d445ba0b1c46",
     "portable/JOB_RESEARCH.md": "24ef073ff581f26eef542cecfac183a4b4ee6f441ad1c2774f0cca9e6e4ca5a2",

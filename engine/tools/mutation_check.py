@@ -11,7 +11,7 @@ import tempfile
 root=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path);a=p.parse_args()
 mutations=[
- ('drop_prior_candidates','store.py','WHERE r.profile_id=? AND','WHERE 0 AND r.profile_id=? AND','test_engine.CoreTests.test_three_run_candidate_survives'),
+ ('drop_prior_candidates','store.py','JOIN jobs j ON j.id=rj.job_id WHERE r.profile_id=? AND','JOIN jobs j ON j.id=rj.job_id WHERE 0 AND r.profile_id=? AND','test_engine.CoreTests.test_three_run_candidate_survives'),
  ('close_missing_jobs','store.py','for m in missing:\n                    self._enqueue','for m in missing:\n                    self.db.execute("UPDATE jobs SET recruiting_status=\'closed\' WHERE id=?",(m[0],))\n                    self._enqueue','test_engine.CoreTests.test_absence_never_closes_job'),
  ('disable_report_reconciliation','store.py','if expected != shown:','if False:','test_engine.CoreTests.test_report_omission_is_error'),
  ('ignore_total_mismatch','store.py','if page.terminal and page.expected_total is not None and observed_count != page.expected_total:','if False:','test_engine.CoreTests.test_truncated_inventory_not_complete')]
@@ -19,8 +19,8 @@ results=[]
 for name,file,old,new,test in mutations:
     with tempfile.TemporaryDirectory() as td:
         folder=Path(td);shutil.copytree(root/'job_research_engine',folder/'job_research_engine');shutil.copytree(root/'tests',folder/'tests')
-        path=folder/'job_research_engine'/file;text=path.read_text();assert text.count(old)==1,(name,text.count(old));path.write_text(text.replace(old,new))
-        compile(path.read_text(),str(path),'exec')
+        path=folder/'job_research_engine'/file;text=path.read_text(encoding='utf-8');assert text.count(old)==1,(name,text.count(old));path.write_text(text.replace(old,new),encoding='utf-8',newline='')
+        compile(path.read_text(encoding='utf-8'),str(path),'exec')
         env={**os.environ,'PYTHONPATH':str(folder)+os.pathsep+str(folder/'tests')}
         proc=subprocess.run([sys.executable,'-m','unittest',test,'-v'],cwd=folder,env=env,text=True,capture_output=True)
         output=proc.stdout+proc.stderr

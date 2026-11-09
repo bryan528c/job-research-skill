@@ -9,19 +9,19 @@ def digest(data:bytes)->str:
     return hashlib.sha256(data).hexdigest()
 
 def verify(root:Path=ROOT)->dict:
-    version=(root/'VERSION').read_text().strip()
-    manifest=json.loads((root/'dist/manifest.json').read_text())
-    source=json.loads((root/'PACKAGE_MANIFEST.json').read_text())
+    version=(root/'VERSION').read_text(encoding='utf-8').strip()
+    manifest=json.loads((root/'dist/manifest.json').read_text(encoding='utf-8'))
+    source=json.loads((root/'PACKAGE_MANIFEST.json').read_text(encoding='utf-8'))
     if manifest['version']!=version or source['version']!=version:
         raise ValueError('manifest version mismatch')
     core=(root/'skills/job-research/SKILL.md').read_bytes()
     if f'version: "{version}"' not in core.decode():
         raise ValueError('skill version mismatch')
-    helper=(root/'skills/job-research/scripts/job_research.py').read_text()
+    helper=(root/'skills/job-research/scripts/job_research.py').read_text(encoding='utf-8')
     if f"VERSION = '{version}'" not in helper:
         raise ValueError('helper version mismatch')
     for name in ['plugin.json','.codex-plugin/plugin.json']:
-        if json.loads((root/name).read_text())['version']!=version:
+        if json.loads((root/name).read_text(encoding='utf-8'))['version']!=version:
             raise ValueError('plugin version mismatch')
     if manifest['canonical_skill_sha256']!=digest(core):
         raise ValueError('canonical skill hash mismatch')

@@ -14,8 +14,8 @@ ROOT=Path(__file__).resolve().parents[1]
 ARTIFACT_NAMES=('job-research-upload-root.zip','job-research-claude.zip','job-research-openai-plugin.zip')
 
 def files_under(path:Path):
-    return sorted(p for p in path.rglob('*') if p.is_file() and not p.is_symlink()
-                  and '__pycache__' not in p.parts and p.suffix!='.pyc')
+    return sorted((p for p in path.rglob('*') if p.is_file() and not p.is_symlink()
+                  and '__pycache__' not in p.parts and p.suffix!='.pyc'),key=lambda p:p.as_posix())
 
 def payload_sources(root:Path)->dict[str,Path]:
     skill=root/'skills/job-research'
@@ -34,6 +34,7 @@ def write_zip(path:Path,items:list[tuple[str,bytes]])->None:
             if name.startswith('/') or '..' in Path(name).parts:
                 raise ValueError('unsafe archive path')
             info=ZipInfo(name,date_time=(2026,11,6,0,0,0))
+            info.create_system=3 # Canonical Unix creator metadata, independent of build OS.
             info.compress_type=ZIP_DEFLATED
             info.external_attr=0o100644 << 16
             z.writestr(info,data)
@@ -90,7 +91,7 @@ def write_package_manifest(root:Path=ROOT)->dict:
     paths.extend(root/'dist'/name for name in [*ARTIFACT_NAMES,'manifest.json'])
     payload={'version':(root/'VERSION').read_text().strip(),
              'files':{p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
-                      for p in sorted(paths) if p.is_file()}}
+                      for p in sorted(paths,key=lambda p:p.relative_to(root).as_posix()) if p.is_file()}}
     (root/'PACKAGE_MANIFEST.json').write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8',newline='\n')
     return payload
 

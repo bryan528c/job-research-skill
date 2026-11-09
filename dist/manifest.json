@@ -3,9 +3,9 @@
   "kind": "packaging_checks_not_runtime_validation",
   "canonical_skill_sha256": "985495ca42a062228ffd9379da890e76c71d92d306cd4815522d7a17b019b508",
   "artifacts": {
-    "job-research-claude.zip": "26c0371f05860572165993cc2199e21652f76484baa75e886c88ad2ae7cea8a8",
-    "job-research-openai-plugin.zip": "1bd9324d87d50dce0ab4c0764531f90eddc6db74cc40a68daf18283190670a7d",
-    "job-research-upload-root.zip": "ed96cb58131492d8937e08f4b614aa03317407b8b2429ee680749fcccb7fb14c"
+    "job-research-claude.zip": "9befc87095689674109e96057242f94e9ae5db284ac804770dcd2e909ca8fbf4",
+    "job-research-openai-plugin.zip": "eaf31f22f1a3166c1e85673db5c9ca8373cd9e6db31ba0a20015e93a7d10679c",
+    "job-research-upload-root.zip": "ec8c0e48680401a7aaaf30646f9294e691292722a6a4dd6637b78d3c61262d9c"
   },
   "portable_sha256": "24ef073ff581f26eef542cecfac183a4b4ee6f441ad1c2774f0cca9e6e4ca5a2",
   "payload": {

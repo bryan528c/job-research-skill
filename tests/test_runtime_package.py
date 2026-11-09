@@ -11,6 +11,21 @@ spec=importlib.util.spec_from_file_location('runtime_builder',ROOT/'scripts/buil
 B=importlib.util.module_from_spec(spec);spec.loader.exec_module(B)
 
 class RuntimePackageTests(unittest.TestCase):
+    def test_zip_metadata_does_not_depend_on_build_os(self):
+        with tempfile.TemporaryDirectory() as name:
+            B.build(ROOT,Path(name))
+            with ZipFile(Path(name)/'job-research-upload-root.zip') as archive:
+                self.assertTrue(all(info.create_system==3 for info in archive.infolist()))
+                self.assertTrue(all(info.external_attr>>16==0o100644 for info in archive.infolist()))
+
+    def test_source_manifest_uses_case_sensitive_portable_order(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);(root/'VERSION').write_text('synthetic')
+            (root/'README.md').write_text('Synthetic');(root/'LICENSE').write_text('Synthetic')
+            (root/'docs').mkdir();(root/'docs/Z.md').write_text('Synthetic');(root/'docs/a.md').write_text('Synthetic')
+            result=B.write_package_manifest(root)
+            self.assertEqual(list(result['files']),sorted(result['files']))
+
     def test_native_zip_runs_engine_without_checkout(self):
         with tempfile.TemporaryDirectory() as name:
             temp=Path(name);B.build(ROOT,temp/'archives')

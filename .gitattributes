@@ -1,0 +1,6 @@
+# Preserve canonical source bytes across Windows/Linux; builders write explicit newlines.
+* -text
+*.zip binary
+*.png binary
+*.jpg binary
+*.pdf binary

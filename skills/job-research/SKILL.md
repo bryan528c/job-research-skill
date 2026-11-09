@@ -2,7 +2,7 @@
 name: job-research
 description: "Discover and reassess worthwhile jobs using available user memory and current sources; produce brief linked digests and optionally continue application planning for selected jobs. Use for personalized job research, recruiting updates, missed-opportunity audits, or selected-job preparation. 채용 리서치, 공고 추천, 선택한 공고 지원 준비. Do not auto-submit or change schedules."
 metadata:
-  version: "0.2.0-rc.2"
+  version: "0.3.0-alpha.2"
   interaction: "memory-first; adaptive-research; brief-linked-results; optional-handoff"
 ---
 
@@ -53,6 +53,14 @@ hiring filters or change career goals from a few rejections.
 Read [memory guidance](references/memory.md) for conflict, freshness and consent issues.
 
 ## 3. Research freely; make omissions accountable
+
+<!-- durable-engine-integration-alpha -->
+For broad or recurring research, when an authorized execution host and private storage are
+available, read [engine integration](references/engine.md) and use the actual durable engine.
+Do not claim engine activation, saved history or nationwide coverage from loading this skill
+alone. If unavailable, distinguish instruction-only execution and preserve material gaps.
+<!-- /durable-engine-integration-alpha -->
+
 
 For broad discovery and recurring updates, read [coverage safeguards](references/coverage.md).
 This sets evidence obligations, not a fixed search order, company quota, query count,

@@ -15,3 +15,5 @@ run-data/
 .pytest_cache/
 validation-local/
 model-runs/
+private-not-for-git/
+JOB_RESEARCH_ENGINE_CODEX_HANDOFF_*.zip

@@ -12,24 +12,31 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 PREFIX={'codex':'.agents','claude-code':'.claude','gemini-cli':'.gemini'}
 
+def linked(path:Path)->bool:
+    return path.is_symlink() or (hasattr(path,'is_junction') and path.is_junction())
+
 
 def install(host:str,base:Path,apply:bool=False,source:Path|None=None)->Path:
     source=source or ROOT/'skills/job-research'
     if host not in PREFIX: raise ValueError('choose codex, claude-code or gemini-cli')
     if not (source/'SKILL.md').is_file(): raise ValueError('source SKILL.md missing')
-    if source.is_symlink() or any(p.is_symlink() for p in source.rglob('*')):
+    if linked(source) or any(linked(p) for p in source.rglob('*')):
         raise ValueError('source symlinks not accepted')
     base=base.expanduser().absolute()
     target=base/PREFIX[host]/'skills'/'job-research'
     # Do not follow an installation path symlink into an unexpected directory.
     for parent in [target,*target.parents]:
-        if parent.is_symlink(): raise ValueError('target or parent symlink; review destination manually')
+        if linked(parent): raise ValueError('target or parent symlink/junction; review destination manually')
     if target.exists(): raise FileExistsError(f'{target} already exists; compare versions, do not overwrite')
     if apply:
         target.parent.mkdir(parents=True,exist_ok=True)
         temp=Path(tempfile.mkdtemp(prefix='.job-research-install-',dir=target.parent))
         try:
             shutil.copytree(source,temp/'payload',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            engine=source.parents[1]/'engine/job_research_engine'
+            if engine.is_dir():
+                if linked(engine) or any(linked(p) for p in engine.rglob('*')):raise ValueError('engine symlink/junction not accepted')
+                shutil.copytree(engine,temp/'payload/scripts/runtime/job_research_engine',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
             if target.exists(): raise FileExistsError('destination appeared during installation')
             (temp/'payload').rename(target)
         finally:

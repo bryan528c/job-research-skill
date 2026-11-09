@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.env
+.env.*
+private-state/
+raw-captures/
+*.egg-info/
+build/
+dist/

@@ -1,0 +1,74 @@
+from __future__ import annotations
+import json
+import os
+import time
+from .adapters import parse_page,request_url
+from .model import EngineError,LeaseLost
+from .store import Store
+from .transport import FetchError,PublicHTTP
+
+
+def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float | None=None,include_details=False) -> dict:
+    """Drain ready native source-page tasks. Budget is a checkpoint, never a completeness target."""
+    transport=transport or PublicHTTP();started=time.monotonic();pages=0;blocked=0
+    while True:
+        if budget_seconds is not None and time.monotonic()-started>=budget_seconds:
+            reason='execution_budget_checkpoint';break
+        task=store.claim(run_id,kinds=('inventory','job_detail','detail_discovery') if include_details else ('inventory',),lease_seconds=180)
+        if not task:reason='no_ready_native_tasks';break
+        source=store.row('sources',task['source_id'])
+        response=None
+        try:
+            if source['policy'] in {'host_only','unreviewed'}:
+                raise FetchError('host_or_policy_review_required','source must be inspected through an authorized host or approved adapter')
+            url,secret_env=request_url(source,task['cursor'])
+            if task['kind']!='inventory':
+                url=json.loads(task['payload_json']).get('url') or store.row('jobs',json.loads(task['payload_json'])['job_id'])['job_url']
+            if source['policy']=='robots' and not transport.permitted_by_robots(url):
+                raise FetchError('robots_disallowed','respect robots restriction; use another permitted source')
+            secrets=None
+            if secret_env:
+                value=os.environ.get(secret_env)
+                if not value:raise FetchError('missing_credential',f'{secret_env} not configured; other sources continue')
+                secrets={'authKey':value}
+            if source['kind']=='skcareers-list' and task['kind']=='inventory':
+                if source['policy']!='public_read_form':raise FetchError('read_form_policy_required','public inventory form needs explicit reviewed policy')
+                response=transport.read_form(url,{'sort':'2','searchText':'','corpCode':'','jobRole':'','recruitType':'','workingType':'','workingRegion':'',**json.loads(source['settings_json']).get('filters',{})})
+            else:response=transport.get(url,secret_query=secrets)
+            if task['kind']!='inventory':
+                from .korean import detect_kind,parse_detail
+                job=parse_detail(detect_kind(url),response.body,url,json.loads(source['settings_json']))
+                store.commit_detail(task['id'],task['lease_token'],job,source_url=response.url,payload=response.body,
+                                    origin=getattr(transport,'evidence_origin','native_http'))
+                pages+=1;continue
+            page=parse_page(source,response.body,task['cursor'])
+            result=store.commit_page(task['id'],task['lease_token'],page,source_url=response.url,
+                payload=response.body,media_type=response.headers.get('content-type','application/octet-stream'),
+                origin=getattr(transport,'evidence_origin','native_http'))
+            pages+=1
+            if result['gap']:blocked+=1
+        except LeaseLost:
+            blocked+=1 # Another worker owns it now; no stale writes.
+        except FetchError as exc:
+            store.fail_task(task['id'],task['lease_token'],code=exc.code,note=str(exc),retry_after=exc.retry_after)
+            blocked+=1
+        except (EngineError,KeyError,TypeError,ValueError) as exc:
+            if response is not None:
+                with store.transaction():
+                    store._check_lease(task['id'],task['lease_token'])
+                    oid=store._observe(task,response.url,response.body,media_type=response.headers.get('content-type','application/octet-stream'),
+                        origin=getattr(transport,'evidence_origin','native_http'),tool_ref=None,observed_at=None)
+                    content=json.loads(store.row('tasks',task['id'])['payload_json']);content['failed_observation_id']=oid
+                    store.db.execute('UPDATE tasks SET payload_json=? WHERE id=?',(json.dumps(content),task['id']))
+            store.fail_task(task['id'],task['lease_token'],code='parse_or_contract_failure',note=str(exc)[:500])
+            blocked+=1
+    coverage=store.checkpoint(run_id,stop_reason=reason)
+    return {'pages_committed':pages,'blocked_or_failed_attempts':blocked,'stop_reason':reason,'coverage':coverage}
+
+
+def import_host_capture(store: Store,task_id: str,token: str,payload: bytes, *, source_url: str,
+                        tool_ref: str,observed_at: str | None=None,fixture=False) -> dict:
+    task=store.row('tasks',task_id);source=store.row('sources',task['source_id'])
+    page=parse_page(source,payload,task['cursor'])
+    return store.commit_page(task_id,token,page,source_url=source_url,payload=payload,
+        origin='fixture' if fixture else 'host_export',tool_ref=tool_ref,observed_at=observed_at)

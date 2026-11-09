@@ -1,6 +1,6 @@
 # Job Research — self-contained instructions
 
-Version: 0.2.0-rc.2.
+Version: 0.3.0-alpha.2.
 Attach or paste this file when native skills are unavailable. Follow it as user-provided
 workflow guidance subject to the host's higher-priority instructions and permissions.
 This does not install tools, share providers' memory, grant access or create a schedule.
@@ -54,6 +54,14 @@ hiring filters or change career goals from a few rejections.
 Read memory guidance (included below or optional offline helper) for conflict, freshness and consent issues.
 
 ## 3. Research freely; make omissions accountable
+
+<!-- durable-engine-integration-alpha -->
+For broad or recurring research, when an authorized execution host and private storage are
+available, read engine integration (included below or optional offline helper) and use the actual durable engine.
+Do not claim engine activation, saved history or nationwide coverage from loading this skill
+alone. If unavailable, distinguish instruction-only execution and preserve material gaps.
+<!-- /durable-engine-integration-alpha -->
+
 
 For broad discovery and recurring updates, read coverage safeguards (included below or optional offline helper).
 This sets evidence obligations, not a fixed search order, company quota, query count,

@@ -121,6 +121,7 @@ CREATE INDEX IF NOT EXISTS sources_company ON sources(company_id,enabled);
 CREATE INDEX IF NOT EXISTS tasks_company_kind ON tasks(company_id,kind,status,created_at);
 CREATE INDEX IF NOT EXISTS tasks_gap_identity ON tasks(kind,key,status,created_at,run_id);
 CREATE INDEX IF NOT EXISTS tasks_source_gap ON tasks(source_id,kind,status,created_at);
+CREATE INDEX IF NOT EXISTS changes_entity_time ON change_log(entity,entity_id,at);
 CREATE INDEX IF NOT EXISTS jobs_source ON jobs(source_id);
 CREATE INDEX IF NOT EXISTS sightings_task ON job_sightings(task_id,job_id);
 CREATE INDEX IF NOT EXISTS events_profile_target ON user_events(profile_id,target_id,kind,created_at);
@@ -377,8 +378,67 @@ class Store:
                 for legacy in self.db.execute("SELECT id,created_at FROM legacy_records WHERE profile_id=? AND resolution_json IS NULL", (profile_id,)).fetchall():
                     self._enqueue(rid, "legacy_recheck", legacy["id"], payload={"legacy_id":legacy["id"]},
                                   priority=20, first_created=legacy["created_at"])
+            self._carry_unresolved_work(rid)
             self._log("run", rid, "plan_frozen", {"companies": len(company_ids), "company_ids": company_ids, "scope": scope})
         return rid
+
+    def _carry_unresolved_work(self, run_id: str) -> int:
+        """Carry outstanding detail/image/host work; caller owns the transaction.
+
+        Inventory scans and company/legacy planning are rebuilt by plan_run. Other
+        gaps must survive even if an intervening older engine run omitted them.
+        The most recent outcome wins, including a previous worker finishing after
+        the next run was planned, so a completed review is not revived.
+        Leases belong to the old worker; payload, cursor and backoff still persist.
+        """
+        run = self.row('runs', run_id)
+        rows = self.db.execute('''SELECT * FROM (
+            SELECT t.*,ROW_NUMBER() OVER (
+                PARTITION BY t.kind,t.key ORDER BY
+                    MAX(r.created_at,COALESCE(t.finished_at,r.created_at),COALESCE(
+                        (SELECT MAX(c.at) FROM change_log c WHERE c.entity='task' AND c.entity_id=t.id),
+                        r.created_at)) DESC,
+                    r.rowid DESC,t.rowid DESC
+            ) AS occurrence FROM tasks t JOIN runs r ON r.id=t.run_id
+            WHERE r.profile_id=? AND t.run_id!=?
+            AND t.kind NOT IN ('inventory','source_discovery','legacy_recheck')
+        ) WHERE occurrence=1 AND status NOT IN ('done','superseded')''',
+            (run['profile_id'],run_id)).fetchall()
+        carried = 0
+        for task in rows:
+            if task['company_id'] and not self.db.execute(
+                    'SELECT 1 FROM run_companies WHERE run_id=? AND company_id=?',
+                    (run_id,task['company_id'])).fetchone():
+                continue
+            if task['source_id'] and not self.db.execute(
+                    'SELECT 1 FROM run_sources WHERE run_id=? AND source_id=?',
+                    (run_id,task['source_id'])).fetchone():
+                continue
+            payload=json.loads(task['payload_json'])
+            if run['scope']=='targeted' and not task['company_id'] and not payload.get('job_id'):
+                source_company=self.row('sources',task['source_id'])['company_id'] if task['source_id'] else None
+                if not source_company:
+                    continue
+            if payload.get('job_id') and not self.db.execute(
+                    'SELECT 1 FROM run_jobs WHERE run_id=? AND job_id=?',
+                    (run_id,payload['job_id'])).fetchone():
+                continue
+            if self.db.execute('SELECT 1 FROM tasks WHERE run_id=? AND kind=? AND key=?',
+                    (run_id,task['kind'],task['key'])).fetchone():
+                continue
+            tid=self._enqueue(run_id,task['kind'],task['key'],source_id=task['source_id'],
+                company_id=task['company_id'],payload=payload,priority=task['priority'],
+                first_created=task['created_at'])
+            self.db.execute('''UPDATE tasks SET cursor=?,status=?,not_before=?,attempts=?,
+                error_code=?,error_note=?,finished_at=? WHERE id=?''',
+                (task['cursor'],'queued' if task['status']=='leased' else task['status'],
+                 task['not_before'],task['attempts'],task['error_code'],task['error_note'],
+                 task['finished_at'],tid))
+            self.db.execute('''INSERT INTO pages SELECT ?,cursor_key,observation_id,next_cursor,
+                terminal,expected_total,item_count FROM pages WHERE task_id=?''',(tid,task['id']))
+            carried += 1
+        self._log('run',run_id,'unresolved_work_carried',{'tasks':carried})
+        return carried
 
     def attach_source(self, run_id: str, source_id: str) -> None:
         run, src = self.row("runs", run_id), self.row("sources", source_id)
@@ -402,13 +462,34 @@ class Store:
         placeholders = ",".join("?" for _ in kinds)
         with self.transaction():
             # Aging ensures ordinary work eventually competes with fresh urgent work.
-            task = self.db.execute(f"""SELECT * FROM tasks WHERE run_id=? AND kind IN ({placeholders})
-                AND ((status='queued' AND not_before<=?) OR (status='leased' AND lease_until<=?))
-                AND (? IS NULL OR id=?)
-                ORDER BY priority + (julianday(?) - julianday(created_at))*24 DESC,created_at,id LIMIT 1""",
-                (run_id, *kinds, at, at, task_id, task_id, at)).fetchone()
-            if task is None:
-                return None
+            while True:
+                task = self.db.execute(f"""SELECT * FROM tasks WHERE run_id=? AND kind IN ({placeholders})
+                    AND ((status='queued' AND not_before<=?) OR (status='leased' AND lease_until<=?))
+                    AND (? IS NULL OR id=?)
+                    ORDER BY priority + (julianday(?) - julianday(created_at))*24 DESC,created_at,id LIMIT 1""",
+                    (run_id, *kinds, at, at, task_id, task_id, at)).fetchone()
+                if task is None:
+                    return None
+                if task['kind'] not in {'inventory','source_discovery','legacy_recheck'}:
+                    # An older still-valid worker may finish/fail after this run was
+                    # planned. Honor that outcome before leasing a queued copy.
+                    latest=self.db.execute('''SELECT t.* FROM tasks t JOIN runs r ON r.id=t.run_id
+                        WHERE r.profile_id=? AND t.kind=? AND t.key=? ORDER BY
+                        MAX(r.created_at,COALESCE(t.finished_at,r.created_at),COALESCE(
+                            (SELECT MAX(c.at) FROM change_log c WHERE c.entity='task' AND c.entity_id=t.id),
+                            r.created_at)) DESC,r.rowid DESC,t.rowid DESC LIMIT 1''',
+                        (run['profile_id'],task['kind'],task['key'])).fetchone()
+                    if latest['id']!=task['id'] and (latest['status'] in {'done','superseded','blocked','deferred'}
+                            or (latest['status']=='queued' and latest['not_before']>at)):
+                        self.db.execute('''UPDATE tasks SET status=?,not_before=?,error_code=?,error_note=?,
+                            finished_at=?,payload_json=?,cursor=?,attempts=MAX(attempts,?),priority=?,
+                            created_at=MIN(created_at,?),lease_token=NULL,lease_until=NULL WHERE id=?''',
+                            (latest['status'],latest['not_before'],latest['error_code'],latest['error_note'],
+                             latest['finished_at'],latest['payload_json'],latest['cursor'],latest['attempts'],
+                             latest['priority'],latest['created_at'],task['id']))
+                        self._log('task',task['id'],'outcome_synchronized',{'from_task':latest['id']})
+                        continue
+                break
             token = uuid.uuid4().hex
             self.db.execute("UPDATE tasks SET status='leased',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=?",
                             (token, until, task["id"]))

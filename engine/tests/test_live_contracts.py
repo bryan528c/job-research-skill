@@ -160,6 +160,121 @@ class DurableContracts(unittest.TestCase):
                       expected_profile_revision=1,expected_content_hash=job['content_hash'])
         self.assertNotEqual(before,state_signature(self.s,'p',rid))
 
+    def test_new_cycle_carries_detail_image_and_blocked_discovery(self):
+        rid,jid=self.observed();src=self.s.row('jobs',jid)['source_id']
+        old='2026-01-01T00:00:00.000000+00:00';later='2027-01-01T00:00:00.000000+00:00'
+        for kind,status in [('detail_discovery','blocked'),('image_review','queued'),('job_detail','leased')]:
+            tid=self.s._enqueue(rid,kind,kind,source_id=src,company_id=self.cid,
+                payload={'job_id':jid,'url':'https://jobs.example.org/1'},priority=19,first_created=old)
+            self.s.db.execute('''UPDATE tasks SET status=?,cursor='next',not_before=?,attempts=2,
+                error_code='needs_review',error_note='original reason',lease_token='old-worker',
+                lease_until=? WHERE id=?''',(status,later,later,tid))
+        next_run=self.s.plan_run('p',scope_note='repeat',parent_run_id=rid)
+        inherited=self.s.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind!='inventory'",(next_run,)).fetchall()
+        self.assertEqual(len(inherited),3)
+        for task in inherited:
+            self.assertEqual(task['created_at'],old);self.assertEqual(task['not_before'],later)
+            self.assertEqual(task['cursor'],'next');self.assertEqual(task['attempts'],2)
+            self.assertEqual(task['error_note'],'original reason');self.assertIsNone(task['lease_token'])
+            self.assertIsNone(task['lease_until']);self.assertEqual(json.loads(task['payload_json'])['job_id'],jid)
+            self.assertEqual(task['status'],'blocked' if task['kind']=='detail_discovery' else 'queued')
+        third=self.s.plan_run('p',scope_note='repeat again',parent_run_id=next_run)
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind!='inventory'",(third,)).fetchone()[0],3)
+
+    def test_new_cycle_does_not_revive_a_review_completed_later(self):
+        rid,jid=self.observed();src=self.s.row('jobs',jid)['source_id']
+        self.s._enqueue(rid,'image_review',jid,source_id=src,company_id=self.cid,payload={'job_id':jid})
+        second=self.s.plan_run('p',scope_note='review')
+        self.s.db.execute("UPDATE tasks SET status='done' WHERE run_id=? AND kind='image_review'",(second,))
+        third=self.s.plan_run('p',scope_note='after review')
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='image_review'",(third,)).fetchone()[0],0)
+
+    def test_new_cycle_recovers_work_omitted_by_an_intermediate_run(self):
+        rid,jid=self.observed();src=self.s.row('jobs',jid)['source_id']
+        self.s._enqueue(rid,'detail_discovery','https://jobs.example.org/unread',source_id=src,company_id=self.cid)
+        intermediate=self.s.plan_run('p',scope_note='older runtime')
+        self.s.db.execute("DELETE FROM tasks WHERE run_id=? AND kind='detail_discovery'",(intermediate,))
+        latest=self.s.plan_run('p',scope_note='restore historical outstanding work')
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='detail_discovery'",(latest,)).fetchone()[0],1)
+
+    def test_old_worker_late_completion_does_not_revive_a_carried_detail(self):
+        rid,jid=self.observed(Job('1','Planning','Synthetic','https://jobs.example.org/1'))
+        task=self.s.claim(rid,kinds=('job_detail',),lease_seconds=300)
+        second=self.s.plan_run('p',scope_note='while prior worker still runs')
+        self.s.commit_detail(task['id'],task['lease_token'],Job('1','Planning','Synthetic',
+            'https://jobs.example.org/1',description='Verified duties',detail_verified=True),
+            source_url='https://jobs.example.org/1',payload=b'actual fixture detail',origin='fixture')
+        self.assertIsNone(self.s.claim(second,kinds=('job_detail',)))
+        third=self.s.plan_run('p',scope_note='after late successful completion',parent_run_id=second)
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='job_detail'",(third,)).fetchone()[0],0)
+
+    def test_targeted_cycle_does_not_inherit_unclassified_platform_discovery(self):
+        src=self.s.add_source('host-json','https://platform.example.org/list',company_id=None,
+            evidence_ref='synthetic',policy='host_only')
+        broad=self.s.plan_run('p',scope_note='broad platform discovery')
+        self.s._enqueue(broad,'detail_discovery','https://platform.example.org/unknown',source_id=src,
+            payload={'url':'https://platform.example.org/unknown'})
+        targeted=self.s.plan_run('p',scope='targeted',scope_note='only declared company',company_ids=[self.cid])
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='detail_discovery'",(targeted,)).fetchone()[0],0)
+
+    def _late_failure(self,retry_after):
+        rid,jid=self.observed(Job('1','Planning','Synthetic','https://jobs.example.org/1'))
+        task=self.s.claim(rid,kinds=('job_detail',),lease_seconds=300)
+        second=self.s.plan_run('p',scope_note='while prior worker still runs')
+        self.s.fail_task(task['id'],task['lease_token'],code='source_denied',
+            note='Late authoritative failure',retry_after=retry_after)
+        failed=self.s.row('tasks',task['id'])
+        self.assertIsNone(self.s.claim(second,kinds=('job_detail',)))
+        synchronized=self.s.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind='job_detail'",(second,)).fetchone()
+        self.assertEqual(synchronized['status'],failed['status'])
+        self.assertEqual(synchronized['not_before'],failed['not_before'])
+        third=self.s.plan_run('p',scope_note='preserve late failure',parent_run_id=second)
+        inherited=self.s.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind='job_detail'",(third,)).fetchone()
+        self.assertEqual(inherited['status'],failed['status'])
+        self.assertEqual(inherited['not_before'],failed['not_before'])
+        self.assertEqual(inherited['error_code'],'source_denied')
+        self.assertEqual(inherited['error_note'],'Late authoritative failure')
+        self.assertIsNone(self.s.claim(third,kinds=('job_detail',)))
+
+    def test_old_worker_late_block_is_preserved(self):
+        self._late_failure(None)
+
+    def test_old_worker_late_backoff_cannot_be_bypassed_by_new_cycle(self):
+        self._late_failure(600)
+
+    def test_current_sync_keeps_late_parser_failure_body_reference(self):
+        rid,jid=self.observed(Job('1','Planning','Synthetic','https://jobs.example.org/1'))
+        src=self.s.row('jobs',jid)['source_id']
+        self.s.db.execute("UPDATE sources SET policy='public_api' WHERE id=?",(src,))
+        store=self.s;created=[];body=b'<html>changed synthetic detail contract</html>'
+        class Transport:
+            evidence_origin='fixture'
+            def get(self,url,secret_query=None):
+                created.append(store.plan_run('p',scope_note='planned during old detail fetch'))
+                return Response(url,200,{'content-type':'text/html'},body)
+        collect(store,rid,transport=Transport(),include_details=True)
+        old=store.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind='job_detail'",(rid,)).fetchone()
+        oid=json.loads(old['payload_json'])['failed_observation_id']
+        self.assertEqual(bytes(store.row('observations',oid)['payload']),body)
+        second=created[0]
+        self.assertIsNone(store.claim(second,kinds=('job_detail',)))
+        current=store.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind='job_detail'",(second,)).fetchone()
+        self.assertEqual(json.loads(current['payload_json'])['failed_observation_id'],oid)
+        third=store.plan_run('p',scope_note='after parser failure sync')
+        copied=store.db.execute("SELECT * FROM tasks WHERE run_id=? AND kind='job_detail'",(third,)).fetchone()
+        self.assertEqual(json.loads(copied['payload_json'])['failed_observation_id'],oid)
+
+    def test_unresolved_work_respects_profile_and_targeted_scope(self):
+        rid,jid=self.observed();src=self.s.row('jobs',jid)['source_id']
+        self.s._enqueue(rid,'detail_discovery','https://jobs.example.org/unread',source_id=src,company_id=self.cid)
+        self.s.set_profile('other',{})
+        other=self.s.plan_run('other',scope_note='another person')
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='detail_discovery'",(other,)).fetchone()[0],0)
+        self.s.import_companies('a',[{'external_id':'2','name':'Other'}],source_url='https://registry.example.org/b',scope='fixture',raw_sha256='b'*64,provenance='fixture')
+        cid=self.s.db.execute("SELECT id FROM companies WHERE external_id='2'").fetchone()[0]
+        targeted=self.s.plan_run('p',scope='targeted',scope_note='unrelated company',company_ids=[cid])
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM tasks WHERE run_id=? AND kind='detail_discovery'",(targeted,)).fetchone()[0],0)
+
     def test_platform_employer_expands_frontier_without_name_only_legal_merge(self):
         src=self.s.add_source('host-json','https://platform.example.org/list',company_id=None,evidence_ref='synthetic platform',policy='public_api')
         rid=self.s.plan_run('p',scope_note='platform discovery');task=self.s.claim(rid)

@@ -2,6 +2,7 @@
 import json
 import uuid
 from collections import defaultdict
+from urllib.parse import urlsplit
 from .model import EngineError,dump,stable_id,required
 from .registries import digits
 from .registry import normalize_stock_code
@@ -19,13 +20,110 @@ def identifiers(company):
         result['stock_code']=stock
     return result
 
-def canonical(store, company_id):
+
+def effective_identifiers(store,company,*,overrides=None):
+    result=identifiers(company)
+    rows=overrides if overrides is not None else store.db.execute(
+        'SELECT * FROM identifier_overrides WHERE company_id=? AND revoked_at IS NULL',(company['id'],)).fetchall()
+    for row in rows:
+        if result.get(row['field']) not in {row['source_value'],row['corrected_value']}:
+            raise EngineError('identifier override source drift; explicit review required')
+        result[row['field']]=row['corrected_value']
+    return result
+
+
+def identifier_override_drifts(store):
+    result=[]
+    for row in store.db.execute('SELECT * FROM identifier_overrides WHERE revoked_at IS NULL'):
+        actual=identifiers(store.row('companies',row['company_id'])).get(row['field'])
+        if actual not in {row['source_value'],row['corrected_value']}:
+            result.append({'company_id':row['company_id'],'override_id':row['id'],'field':row['field'],'actual':actual})
+    return result
+
+
+def _component(store,root):
+    return store.db.execute('''WITH RECURSIVE members(id) AS (
+        SELECT ? UNION SELECT a.alias_id FROM company_aliases a JOIN members m ON a.canonical_id=m.id
+        ) SELECT c.* FROM companies c JOIN members m ON c.id=m.id''',(root,)).fetchall()
+
+
+def override_identifier(store,company_id,field,*,expected_source_value,corrected_value,evidence_ids,reason):
+    """Human-reviewed correction overlay; raw registry IDs/facts never change."""
+    required(reason,'identifier correction reason')
+    if field not in IDENTIFIERS:raise EngineError('unknown official identifier field')
+    fake={'facts_json':dump({field:corrected_value})}
+    if identifiers(fake).get(field)!=corrected_value:raise EngineError('normalized official identifier required')
+    with store.transaction():
+        company=store.row('companies',company_id)
+        if identifiers(company).get(field)!=expected_source_value:raise EngineError('source identifier changed; review the new official record')
+        evidence=[store.row('observations',oid) for oid in set(evidence_ids)]
+        if len({urlsplit(o['source_url']).hostname for o in evidence if o['origin'] in {'native_http','host_export','fixture'}})<2:
+            raise EngineError('independent observed source domains required for identifier correction')
+        previous=store.db.execute('SELECT * FROM identifier_overrides WHERE company_id=? AND field=? AND revoked_at IS NULL',(company_id,field)).fetchone()
+        if previous:
+            if previous['source_value']==expected_source_value and previous['corrected_value']==corrected_value:return previous['id']
+            raise EngineError('active correction exists; revoke explicitly before replacement')
+        root=canonical(store,company_id)
+        oid=uuid.uuid4().hex
+        store.db.execute('INSERT INTO identifier_overrides VALUES(?,?,?,?,?,?,?,?,NULL)',
+            (oid,company_id,field,expected_source_value,corrected_value,dump(sorted(set(evidence_ids))),reason,store._now()))
+        values=defaultdict(set)
+        for member in _component(store,root):
+            for key,value in effective_identifiers(store,dict(member)).items():values[key].add(value)
+        if any(len(v)>1 for v in values.values()):raise EngineError('correction conflicts with the active identity component')
+        store._log('identifier_override',oid,'created',{'company_id':company_id,'field':field,'raw_registry_facts_preserved':True})
+    return oid
+
+
+def revoke_identifier_override(store,override_id,*,reason):
+    required(reason,'correction undo reason')
+    with store.transaction():
+        row=store.row('identifier_overrides',override_id)
+        if row['revoked_at']:return False
+        root=canonical(store,row['company_id'],_check_corrections=False)
+        store.db.execute('UPDATE identifier_overrides SET revoked_at=? WHERE id=?',(store._now(),override_id))
+        values=defaultdict(set)
+        for member in _component(store,root):
+            for key,value in effective_identifiers(store,dict(member)).items():values[key].add(value)
+        if any(len(v)>1 for v in values.values()):raise EngineError('undo the dependent alias before revoking its identifier evidence')
+        store._log('identifier_override',override_id,'revoked',{'reason':reason})
+    return True
+
+
+def review_identity_conflict(store,conflict_id,*,disposition,evidence_ids,reason):
+    required(reason,'identity conflict review reason')
+    if disposition not in {'linked_after_correction','historical_relationship','distinct_entities','unresolved'}:
+        raise EngineError('unknown identity review disposition')
+    with store.transaction():
+        conflict=store.row('identity_conflicts',conflict_id)
+        if not evidence_ids:raise EngineError('identity review requires actual observations')
+        for oid in evidence_ids:store.row('observations',oid)
+        if disposition=='linked_after_correction':
+            ids=json.loads(conflict['companies_json'])
+            if len(ids)<2 or len({canonical(store,cid) for cid in ids})!=1:
+                raise EngineError('conflict cannot be resolved before its exact members have a proven consistent alias')
+            values=defaultdict(set)
+            for cid in ids:
+                for key,value in effective_identifiers(store,store.row('companies',cid)).items():values[key].add(value)
+            if any(len(v)>1 for v in values.values()):raise EngineError('effective official identifiers still conflict')
+            store.db.execute('UPDATE identity_conflicts SET resolved=1 WHERE id=?',(conflict_id,))
+        # Explaining a historical relationship or different entities does not
+        # prove which conflicting source identifier is correct.
+        review=uuid.uuid4().hex
+        store.db.execute('INSERT INTO identity_conflict_reviews VALUES(?,?,?,?,?,?)',
+            (review,conflict_id,disposition,dump(sorted(set(evidence_ids))),reason,store._now()))
+        return review
+
+def canonical(store, company_id, *, _check_corrections=True):
     seen=set()
     while True:
         if company_id in seen:raise EngineError('corporate alias cycle')
         seen.add(company_id)
         row=store.db.execute('SELECT canonical_id FROM company_aliases WHERE alias_id=?',(company_id,)).fetchone()
-        if not row:return company_id
+        if not row:
+            if _check_corrections:
+                for member in _component(store,company_id):effective_identifiers(store,dict(member))
+            return company_id
         company_id=row[0]
 
 def link_companies(store, alias_id, canonical_id, *, evidence_ref):
@@ -45,7 +143,7 @@ def link_companies(store, alias_id, canonical_id, *, evidence_ref):
         values=defaultdict(set)
         by_root=defaultdict(lambda:defaultdict(set))
         for member in members:
-            for field,value in identifiers(member).items():
+            for field,value in effective_identifiers(store,member).items():
                 values[field].add(value);by_root[member['component_root']][field].add(value)
         if any(len(v)>1 for v in values.values()):
             raise EngineError('conflicting official identifiers in canonical alias component; review and undo explicitly')
@@ -71,7 +169,12 @@ def unlink_company(store,alias_id,*,reason):
 
 def reconcile(store):
     companies={r['id']:dict(r) for r in store.db.execute('SELECT * FROM companies')}
-    known={cid:identifiers(c) for cid,c in companies.items()}
+    overlays=defaultdict(list)
+    for row in store.db.execute('SELECT * FROM identifier_overrides WHERE revoked_at IS NULL'):overlays[row['company_id']].append(row)
+    known={};drifts=[]
+    for cid,company in companies.items():
+        try:known[cid]=effective_identifiers(store,company,overrides=overlays[cid])
+        except EngineError:known[cid]={};drifts.append(cid)
     index=defaultdict(list);links=0;conflicts=0;rejections=0;new_conflicts=0
     for cid,company in companies.items():
         for field,value in known[cid].items():index[(field,value)].append(cid)
@@ -84,7 +187,8 @@ def reconcile(store):
             inserted=store.db.execute('INSERT OR IGNORE INTO identity_conflicts VALUES(?,?,?,?,?,0)',(conflict,field+':'+value,dump(sorted(ids)),'conflicting official identifiers; no automatic link',store._now()))
             new_conflicts+=inserted.rowcount
             continue
-        root=min(canonical(store,cid) for cid in ids)
+        try:root=min(canonical(store,cid) for cid in ids)
+        except EngineError:rejections+=1;continue
         for cid in sorted(ids):
             if cid==root:continue
             try:links+=int(link_companies(store,cid,root,evidence_ref='registry snapshots / '+field+':'+value))
@@ -96,5 +200,5 @@ def reconcile(store):
             'identity_components':len(companies)-aliases,'new_links':links,'conflict_clusters':conflicts,
             'link_rejections':rejections,'new_conflict_records':new_conflicts,
             'stored_unresolved_conflict_records':store.db.execute('SELECT COUNT(*) FROM identity_conflicts WHERE resolved=0').fetchone()[0],
-            'unidentified_source_records':unresolved,'national_unique_companies':'unknown',
+            'unidentified_source_records':unresolved,'identifier_override_drift_records':drifts,'national_unique_companies':'unknown',
             'note':'components are resolved source records, not a census of all Korean legal entities'}

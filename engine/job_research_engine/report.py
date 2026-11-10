@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime,timezone,timedelta
 import json
 import re
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
 from .model import EngineError,public_url,timestamp
 from .store import Store
@@ -10,6 +11,13 @@ from .store import Store
 def md(value) -> str:
     return re.sub(r'([\\`*_{}\[\]<>])',r'\\\1',' '.join(str(value).split()))
 
+def posting_link_label(url,settings):
+    host=(urlsplit(url).hostname or '').lower()
+    platforms=('jobkorea.co.kr','saramin.co.kr','wanted.jobs','wanted.co.kr','linkareer.com','rememberapp.co.kr','zighang.com','jasoseol.com')
+    if any(host==p or host.endswith('.'+p) for p in platforms):return '외부 플랫폼 상세'
+    kind=settings.get('posting_link_kind')
+    return '공식 공채 상세' if kind=='official_campaign' else '공식 공고' if kind=='official' else '공고 상세'
+
 def local_zone(name):
     try:return ZoneInfo(name)
     except ZoneInfoNotFoundError:
@@ -17,11 +25,14 @@ def local_zone(name):
         return timezone(timedelta(hours=9)) if name=='Asia/Seoul' else timezone.utc if name in {'UTC','Etc/UTC'} else None
 
 
-def deadline_label(d: dict) -> str:
+def deadline_label(d: dict,zone: str | None=None) -> str:
     kind=d['kind']
     if kind=='datetime':
         dt=timestamp(d['at'])
         original=datetime.fromisoformat(d['at'].replace('Z','+00:00'))
+        if zone:
+            tz=local_zone(zone)
+            if tz:original=original.astimezone(tz)
         clock=original.strftime('%H:%M:%S' if original.second or original.microsecond else '%H:%M')
         if original.microsecond:clock+='.'+f'{original.microsecond:06d}'.rstrip('0')
         return original.strftime('%Y-%m-%d ')+clock+original.strftime(' %z')
@@ -66,18 +77,21 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
     for num,j in enumerate(actionable,1):
         assessment=j['assessment'] or {};decision=j['effective_decision'];warnings=[]
         if not j['assessment_current']:warnings.append('개인 조건 또는 공고 변경 후 재평가 필요')
-        if not j['seen_this_run']:warnings.append('이전 후보 보존 · 현재 모집 상태 재확인 필요')
+        if not j['detail_observed_this_run']:warnings.append('이전 후보 보존 · 현재 상세/모집 상태 재확인 필요')
         if past_deadline(j['content']['deadline'],store._now(),zone):
             decision='check';warnings.append('표시된 마감 경과 · 연장/새 회차 확인 전 제출 권고 아님')
         if assessment.get('risk'):warnings.append(assessment['risk'])
         label='추천' if decision=='recommend' else '확인 필요'
-        lines.append(f"**{num}. {md(j['employer'])} — {md(j['title'])} | {md(deadline_label(j['content']['deadline']))} · {label}**")
+        lines.append(f"**{num}. {md(j['employer'])} — {md(j['title'])} | {md(deadline_label(j['content']['deadline'],zone))} · {label}**")
         lines.append(md(assessment.get('reason','경험 연결 재확인 필요'))+(' '+md(' / '.join(warnings)) if warnings else ''))
         url=public_url(j['job_url']).replace('(','%28').replace(')','%29')
-        links=f'[공고]({url})'
+        source=store.row('sources',j['source_id']);settings=json.loads(source['settings_json'])
+        links=f'[{posting_link_label(j["job_url"],settings)}]({url})'
         if j['apply_url'] and j['apply_url']!=j['job_url']:
             target=public_url(j['apply_url']).replace('(','%28').replace(')','%29')
-            links+=f' · [지원하기]({target})'
+            gate=settings.get('application_gate')
+            label='지원 시작(가입 화면)' if gate=='registration' else '지원 시작(로그인 필요)' if gate=='login' else '지원하기'
+            links+=f' · [{label}]({target})'
         lines.extend([links,''])
         mapping.append({'number':num,'job_id':j['id'],'content_hash':j['content_hash'],'effective_decision':decision})
     pending=sum(j['effective_decision']=='pending' and j['fresh_application'] and j['recruiting_status']!='closed' for j in rows)
@@ -86,7 +100,7 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
     if elapsed:lines.extend([f'표시된 마감이 지난 기존 후보 {elapsed}건은 연장·새 회차 확인 대기로 보존했어.',''])
     gaps=[j for j in rows if j['effective_decision']=='check' and j['report_tier']!='actionable']
     if gaps:
-        lines.extend(['원문 보완 대기와 미래 인재풀은 현재 지원 검토와 구분해 보존했어.',''])
+        lines.extend(['원문 보완·접수 시작 대기·미래 인재풀은 현재 지원 검토와 구분해 보존했어.',''])
     coverage={**coverage,'retained_non_actionable_checks':[{'job_id':j['id'],'content_hash':j['content_hash'],'report_tier':j['report_tier']} for j in gaps]}
     if coverage['status']!='scope_checked':
         lines.extend(['일부 기업·공고의 수집 또는 검증이 남아 있어 이번 조사는 부분 결과야.',''])

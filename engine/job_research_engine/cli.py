@@ -11,11 +11,12 @@ from .transport import PublicHTTP
 from .worker import collect,import_host_capture
 from .report import render,handoff
 from .registries import sync_registry,PROVIDERS
-from .identity import reconcile,unlink_company
+from .identity import reconcile,unlink_company,override_identifier,revoke_identifier_override
 from .runtime import session,packet,summary,universe_audit
 from .discovery import discover
 from .legacy import recheck_legacy
 from .model import Job
+from .funnel import candidate_audit
 
 
 def read_json(path):return json.loads(Path(path).read_text(encoding='utf-8'))
@@ -30,11 +31,14 @@ def main(argv=None) -> int:
     q=s.add_parser('sync-registry');q.add_argument('provider',choices=PROVIDERS);q.add_argument('--year',type=int);q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=40);q.add_argument('--restart',action='store_true')
     s.add_parser('reconcile-companies')
     q=s.add_parser('unlink-company');q.add_argument('alias_id');q.add_argument('--reason',required=True)
+    q=s.add_parser('override-identifier');q.add_argument('correction',type=Path)
+    q=s.add_parser('revoke-identifier-override');q.add_argument('override_id');q.add_argument('--reason',required=True)
     q=s.add_parser('session');q.add_argument('profile_id');q.add_argument('request');q.add_argument('--new-cycle',action='store_true');q.add_argument('--host',default='codex')
     q=s.add_parser('summary');q.add_argument('run_id')
     q=s.add_parser('universe-audit');q.add_argument('run_id');q.add_argument('--dimension',choices=['registry','industry','group'],default='registry');q.add_argument('--after',default='');q.add_argument('--page-size',type=int,default=100)
+    q=s.add_parser('candidate-audit');q.add_argument('run_id');q.add_argument('--report-id');q.add_argument('--after',default='');q.add_argument('--page-size',type=int,default=100)
     q=s.add_parser('expand-employers');q.add_argument('run_id')
-    q=s.add_parser('discover');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=30)
+    q=s.add_parser('discover');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=30);q.add_argument('--strategy',choices=['balanced','oldest'],default='balanced')
     q=s.add_parser('recheck-legacy');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=35)
     q=s.add_parser('packet');q.add_argument('run_id');q.add_argument('--section',choices=['jobs','tasks','legacy'],default='jobs');q.add_argument('--after',default='');q.add_argument('--page-size',type=int,default=50)
     q=s.add_parser('profile');q.add_argument('profile_id');q.add_argument('facts',type=Path)
@@ -44,7 +48,7 @@ def main(argv=None) -> int:
     q=s.add_parser('source');q.add_argument('config',type=Path)
     q=s.add_parser('plan');q.add_argument('profile_id');q.add_argument('--scope-note',required=True);q.add_argument('--targeted',action='store_true');q.add_argument('--company-ids',type=Path);q.add_argument('--parent-run')
     q=s.add_parser('attach-source');q.add_argument('run_id');q.add_argument('source_id')
-    q=s.add_parser('collect');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float);q.add_argument('--details',action='store_true')
+    q=s.add_parser('collect');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float);q.add_argument('--details',action='store_true');q.add_argument('--source-id',action='append',default=None)
     q=s.add_parser('split-job');q.add_argument('run_id');q.add_argument('job_id');q.add_argument('roles',type=Path);q.add_argument('--evidence-ref',required=True)
     q=s.add_parser('next-task');q.add_argument('run_id');q.add_argument('--kind',action='append',default=[]);q.add_argument('--lease-seconds',type=int,default=600)
     q=s.add_parser('ingest');q.add_argument('task_id');q.add_argument('lease_token');q.add_argument('capture',type=Path);q.add_argument('--source-url',required=True);q.add_argument('--tool-ref',required=True);q.add_argument('--observed-at');q.add_argument('--fixture',action='store_true')
@@ -67,11 +71,14 @@ def main(argv=None) -> int:
             elif cmd=='sync-registry':result=sync_registry(store,a.provider,year=a.year,transport=PublicHTTP(enabled=a.allow_network,max_bytes=30_000_000),budget_seconds=a.budget_seconds,restart=a.restart)
             elif cmd=='reconcile-companies':result=reconcile(store)
             elif cmd=='unlink-company':unlink_company(store,a.alias_id,reason=a.reason);result={'unlinked':a.alias_id}
+            elif cmd=='override-identifier':result={'identifier_override_id':override_identifier(store,**read_json(a.correction))}
+            elif cmd=='revoke-identifier-override':result={'revoked':revoke_identifier_override(store,a.override_id,reason=a.reason)}
             elif cmd=='session':result=session(store,a.profile_id,request=a.request,host=a.host,new_cycle=a.new_cycle)
             elif cmd=='summary':result=summary(store,a.run_id)
             elif cmd=='universe-audit':result=universe_audit(store,a.run_id,dimension=a.dimension,after=a.after,page_size=a.page_size)
+            elif cmd=='candidate-audit':result=candidate_audit(store,a.run_id,report_id=a.report_id,after=a.after,page_size=a.page_size)
             elif cmd=='expand-employers':result={'job_employers_added_to_unresolved_frontier':store.expand_employer_frontier(a.run_id)}
-            elif cmd=='discover':result=discover(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds)
+            elif cmd=='discover':result=discover(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds,strategy=a.strategy)
             elif cmd=='recheck-legacy':result=recheck_legacy(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds)
             elif cmd=='packet':result=packet(store,a.run_id,section=a.section,after=a.after,page_size=a.page_size)
             elif cmd=='profile':result={'profile_revision':store.set_profile(a.profile_id,read_json(a.facts))}
@@ -85,7 +92,7 @@ def main(argv=None) -> int:
             elif cmd=='source':result={'source_id':store.add_source(**read_json(a.config))}
             elif cmd=='plan':result={'run_id':store.plan_run(a.profile_id,scope='targeted' if a.targeted else 'broad',scope_note=a.scope_note,company_ids=read_json(a.company_ids) if a.company_ids else None,parent_run_id=a.parent_run)}
             elif cmd=='attach-source':store.attach_source(a.run_id,a.source_id);result={'attached':True}
-            elif cmd=='collect':result=collect(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds,include_details=a.details)
+            elif cmd=='collect':result=collect(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds,include_details=a.details,source_ids=a.source_id)
             elif cmd=='split-job':result={'individual_job_ids':store.split_campaign(a.run_id,a.job_id,read_json(a.roles),evidence_ref=a.evidence_ref)}
             elif cmd=='next-task':result=store.claim(a.run_id,kinds=tuple(a.kind or ['legacy_recheck','source_discovery','missing_job_recheck','detail_discovery','inventory']),lease_seconds=a.lease_seconds)
             elif cmd=='ingest':result=import_host_capture(store,a.task_id,a.lease_token,a.capture.read_bytes(),source_url=a.source_url,tool_ref=a.tool_ref,observed_at=a.observed_at,fixture=a.fixture)

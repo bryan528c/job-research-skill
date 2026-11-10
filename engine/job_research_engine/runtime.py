@@ -12,11 +12,17 @@ def state_signature(store,profile_id,run_id):
       'jobs':[tuple(r) for r in store.db.execute('SELECT job_id,carried FROM run_jobs WHERE run_id=? ORDER BY job_id',(run_id,))],
       'job_state':[tuple(r) for r in store.db.execute('SELECT j.* FROM jobs j JOIN run_jobs rj ON rj.job_id=j.id WHERE rj.run_id=? ORDER BY j.id',(run_id,))],
       'versions':[tuple(r) for r in store.db.execute('SELECT v.* FROM job_versions v JOIN run_jobs rj ON rj.job_id=v.job_id WHERE rj.run_id=? ORDER BY v.job_id,v.content_hash',(run_id,))],
+      'inventory_detail_checks':[tuple(r) for r in store.db.execute('SELECT c.* FROM inventory_detail_checks c JOIN run_jobs rj ON rj.job_id=c.job_id WHERE rj.run_id=? ORDER BY c.job_id,c.observation_id',(run_id,))],
       'assessments':[tuple(r) for r in store.db.execute('SELECT * FROM assessments WHERE profile_id=? ORDER BY id',(profile_id,))],
       'assessment_reporting':[tuple(r) for r in store.db.execute('SELECT ar.* FROM assessment_reporting ar JOIN assessments a ON a.id=ar.assessment_id WHERE a.profile_id=? ORDER BY ar.assessment_id',(profile_id,))],
+      'company_aliases':[tuple(r) for r in store.db.execute('SELECT * FROM company_aliases ORDER BY alias_id')],
+      'identifier_overrides':[tuple(r) for r in store.db.execute('SELECT * FROM identifier_overrides ORDER BY id')],
+      'identity_conflicts':[tuple(r) for r in store.db.execute('SELECT * FROM identity_conflicts ORDER BY id')],
+      'identity_conflict_reviews':[tuple(r) for r in store.db.execute('SELECT * FROM identity_conflict_reviews ORDER BY id')],
       'reports':[tuple(r) for r in store.db.execute('SELECT * FROM reports WHERE profile_id=? ORDER BY id',(profile_id,))],
       'source_progress':[tuple(r) for r in store.db.execute('SELECT * FROM run_sources WHERE run_id=? ORDER BY source_id',(run_id,))],
-      'tasks':[tuple(r) for r in store.db.execute('SELECT id,kind,status,cursor,created_at,error_code FROM tasks WHERE run_id=? ORDER BY id',(run_id,))],
+      'source_contracts':[tuple(r) for r in store.db.execute('SELECT s.* FROM sources s JOIN run_sources rs ON rs.source_id=s.id WHERE rs.run_id=? ORDER BY s.id',(run_id,))],
+      'tasks':[tuple(r) for r in store.db.execute('SELECT id,kind,status,cursor,created_at,not_before,error_code FROM tasks WHERE run_id=? ORDER BY id',(run_id,))],
       'scope':[r[0] for r in store.db.execute('SELECT company_id FROM run_companies WHERE run_id=? ORDER BY company_id',(run_id,))],
     }
     return digest(dump(data))

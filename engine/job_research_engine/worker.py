@@ -10,13 +10,13 @@ from .store import Store
 from .transport import FetchError,PublicHTTP
 
 
-def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float | None=None,include_details=False) -> dict:
+def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float | None=None,include_details=False,source_ids=None) -> dict:
     """Drain ready native source-page tasks. Budget is a checkpoint, never a completeness target."""
     transport=transport or PublicHTTP();started=time.monotonic();pages=0;blocked=0
     while True:
         if budget_seconds is not None and time.monotonic()-started>=budget_seconds:
             reason='execution_budget_checkpoint';break
-        task=store.claim(run_id,kinds=('inventory','job_detail','detail_discovery') if include_details else ('inventory',),lease_seconds=180)
+        task=store.claim(run_id,kinds=('inventory','job_detail','detail_discovery') if include_details else ('inventory',),lease_seconds=180,source_ids=source_ids)
         if not task:reason='no_ready_native_tasks';break
         source=store.row('sources',task['source_id'])
         response=None
@@ -38,6 +38,9 @@ def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float |
             from .domestic import KINDS as DOMESTIC_KINDS,request_spec,jobflex_request
             from .korean import detect_kind
             actual_kind=source['kind'] if task['kind']=='inventory' else detect_kind(url)
+            if (task['kind']!='inventory' and (source['kind']=='ninehire-list' or json.loads(source['settings_json']).get('inventory_contract')=='ninehire-rendered')
+                and urlsplit(url).netloc==urlsplit(source['url']).netloc and re.fullmatch(r'/job_posting/[A-Za-z0-9]{4,40}/?',urlsplit(url).path)):
+                actual_kind='ninehire-detail'
             if (task['kind']!='inventory' and source['kind']=='greeting-list'
                 and urlsplit(url).netloc==urlsplit(source['url']).netloc
                 and re.fullmatch(r'/(?:ko/|en/)?o/[1-9][0-9]*/?',urlsplit(url).path)):
@@ -71,6 +74,21 @@ def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float |
                 if actual_kind=='cj-detail' and prior_id:
                     detail_settings['listing_job']=json.loads(store.row('jobs',prior_id)['content_json'])
                 job=parse_detail(actual_kind,response.body,url,detail_settings)
+                iframe=job.source_context.get('observed_description_iframe') if actual_kind=='jobkorea-detail' else None
+                if iframe:
+                    from dataclasses import replace
+                    from .jobkorea import description_body
+                    # Retain both actual reads, at their separate clocks. The
+                    # body route is an observed public src, never an invented API.
+                    with store.transaction():
+                        store._check_lease(task['id'],task['lease_token'])
+                        outer_oid=store._observe(task,response.url,response.body,media_type='text/html',origin=getattr(transport,'evidence_origin','native_http'),tool_ref=None,observed_at=None)
+                    if source['policy']=='robots' and not transport.permitted_by_robots(iframe):raise FetchError('robots_disallowed','observed description iframe restricted')
+                    response=transport.get(iframe)
+                    body=description_body(response.body,response.url,job.external_id)
+                    job=replace(job,description=body['description'],detail_verified=body['detail_verified'],
+                        raw={**job.raw,**{k:v for k,v in body.items() if k not in {'description','detail_verified'}}},
+                        source_context={**job.source_context,'metadata_only':False,'outer_observation_id':outer_oid})
                 store.commit_detail(task['id'],task['lease_token'],job,source_url=response.url,payload=response.body,
                                     origin=getattr(transport,'evidence_origin','native_http'))
                 pages+=1;continue

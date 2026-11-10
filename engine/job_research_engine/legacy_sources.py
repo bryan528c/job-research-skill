@@ -13,7 +13,7 @@ import json
 import re
 from urllib.parse import urljoin, urlsplit
 
-from .htmltools import Node, html, links, next_data
+from .htmltools import Node, html, links, next_data,media_references
 from .korean import deadline, parse_detail as korean_detail, parse_ninehire
 from .model import EngineError, Job, Page, public_url
 
@@ -128,8 +128,8 @@ def _gabia_base(row, url, employer, as_of, *, detailed=False, apply_url=None):
     locations = row.get('category_location') or []
     if not isinstance(positions, list) or not isinstance(locations, list):
         raise EngineError('Gabia category contract changed')
-    media = [public_url(urljoin(url, n.attrs['src'])) for n in body.walk('img') if n.attrs.get('src')]
-    verified = detailed and bool(_non_link_text(body) if media else description)
+    media,inline,frames = media_references(body,url)
+    verified = detailed and bool(description) and not (media or inline or frames)
     if apply_url and apply_url != GABIA_SITE + '/recruit/' + identity + '/signup':
         raise EngineError('Observed application destination does not match this Gabia announcement')
     return Job(identity, title.strip(), employer, url,
@@ -209,16 +209,19 @@ def parse_ninehire_detail(payload, url):
     if not isinstance(identity, str) or identity != urlsplit(url).path.rstrip('/').rsplit('/', 1)[-1]:
         raise EngineError('Ninehire detail identity mismatch')
     body = html((post.get('content') or '').encode('utf-8'))
-    media = [public_url(urljoin(url, n.attrs['src'])) for n in body.walk('img') if n.attrs.get('src')]
+    media,inline,frames = media_references(body,url)
     if (_non_link_text(body) if media else body.text()):
         job = parse_ninehire(payload, url)
     else:
         reception = recruitment.get('reception') or {}
-        status = 'open' if recruitment.get('jobPostingIsActive') is True and reception.get('canSubmit') is True and recruitment.get('status') == 'in_progress' else 'closed' if recruitment.get('closedAt') or recruitment.get('jobPostingIsActive') is False or recruitment.get('status') in {'closed', 'finished'} else 'unknown'
+        from .korean import ninehire_status,ninehire_source_status,ninehire_deadline
+        status = ninehire_status(recruitment)
         job = Job(identity, recruitment.get('externalTitle') or recruitment.get('title') or '',
                   recruitment.get('companyName') or '', url,
-                  description=body.text(), status=status, deadline=deadline(reception.get('endAt') or recruitment.get('endAt')),
+                  description=body.text(), status=status, deadline=ninehire_deadline(recruitment),
                   published_at=recruitment.get('createdAt'), requires_role_split=True,
+                  application_opens_at=deadline(reception.get('startAt')).get('at'),
+                  source_context={'ninehire_source_status':ninehire_source_status(recruitment,post)},
                   raw={'provider': 'ninehire', 'recruitment_id': recruitment.get('recruitmentId'),
                        'application_login_required': recruitment.get('applicantLoginEnabled'),
                        'apply_action': 'onsite button; original media requires inspection',
@@ -230,6 +233,11 @@ def parse_ninehire_detail(payload, url):
                                affiliation=recruitment.get('affiliation'),
                                employer_identity='source companyName display; contract legal employer may need confirmation',
                                external_detail_urls=[u for u, label, n in links(body, url)]))
+    if media or inline or frames:
+        # A culture/benefits paragraph does not prove the duties contained in a
+        # poster were read. Only the host may clear this after real inspection.
+        job=replace(job,detail_verified=False,raw=dict(job.raw,iframe_urls=frames,inline_media=inline,
+            pending_reason='body media requires actual host inspection even when surrounding text exists'))
     job.validate()
     return job
 

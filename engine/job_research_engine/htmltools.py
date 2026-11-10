@@ -2,8 +2,29 @@
 from html.parser import HTMLParser
 from dataclasses import dataclass, field
 import json
+import base64
+import hashlib
+import re
 from urllib.parse import urljoin
 from .model import EngineError, public_url
+
+
+def media_references(root,url):
+    remote=[];inline=[];frames=[]
+    for node in root.walk('img'):
+        src=node.attrs.get('src')
+        if not src:continue
+        if src.startswith('data:'):
+            match=re.fullmatch(r'data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=\s]+)',src)
+            if not match or len(match.group(2))>16_000_000:raise EngineError('unsupported inline media; actual host inspection required')
+            try:body=base64.b64decode(re.sub(r'\s+','',match.group(2)),validate=True)
+            except ValueError as e:raise EngineError('invalid inline image encoding') from e
+            inline.append({'media_type':match.group(1),'sha256':hashlib.sha256(body).hexdigest(),'bytes':len(body)})
+        else:remote.append(public_url(urljoin(url,src)))
+    for node in root.walk('iframe'):
+        if node.attrs.get('src'):frames.append(public_url(urljoin(url,node.attrs['src'])))
+        elif node.attrs.get('srcdoc'):frames.append('inline srcdoc requires actual host inspection')
+    return remote,inline,frames
 
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 

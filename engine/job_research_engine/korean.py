@@ -7,7 +7,7 @@ from datetime import datetime,timezone,timedelta
 import json
 import re
 from urllib.parse import urljoin,urlsplit,parse_qsl,urlencode,urlunsplit
-from .htmltools import html,next_data,links
+from .htmltools import html,next_data,links,media_references
 from .model import EngineError,Job,Page,public_url,stable_id
 
 def text_html(value):
@@ -30,6 +30,33 @@ def deadline(raw):
     except ValueError:pass
     return {'kind':'unknown','source_text':raw}
 
+def ninehire_status(recruitment):
+    reception=recruitment.get('reception') or {}
+    state=recruitment.get('status')
+    live=recruitment.get('jobPostingIsActive') is True and reception.get('canSubmit') is True
+    if state in {'closed','finished','disabled'}:return 'unknown' if live else 'closed'
+    if state=='in_progress':return 'open' if live and not recruitment.get('closedAt') else 'unknown'
+    if recruitment.get('closedAt') and reception.get('canSubmit') is not True:return 'closed'
+    # Publication is separate from the application window. An unpublished
+    # detail can redirect to login without proving that recruiting ended.
+    return 'unknown'
+
+
+def ninehire_deadline(recruitment):
+    kind=recruitment.get('deadlineType')
+    if kind in {'until_filled','open_ended'}:
+        return {'kind':'rolling','source_text':'채용 시 마감' if kind=='until_filled' else '상시 모집'}
+    reception=recruitment.get('reception') or {}
+    return deadline(reception.get('endAt') or recruitment.get('endAt'))
+
+
+def ninehire_source_status(recruitment,post):
+    reception=recruitment.get('reception') or {}
+    return {'state':recruitment.get('status'),'closed_at':recruitment.get('closedAt'),
+        'posting_active':recruitment.get('jobPostingIsActive'),'post_active':post.get('isActive'),
+        'can_submit':reception.get('canSubmit'),'start_at':reception.get('startAt'),'end_at':reception.get('endAt')}
+
+
 def parse_ninehire(payload,url):
     root=html(payload);props=next_data(root)
     r=props.get('recruitment');post=props.get('jobPosting')
@@ -37,14 +64,15 @@ def parse_ninehire(payload,url):
     content=text_html(post.get('content'))
     if not content:raise EngineError('Ninehire description missing or image-only; host inspection required')
     reception=r.get('reception') or {}
-    status='open' if r.get('jobPostingIsActive') is True and reception.get('canSubmit') is True and r.get('status')=='in_progress' else 'closed' if r.get('closedAt') or r.get('jobPostingIsActive') is False or r.get('status') in {'closed','finished'} else 'unknown'
+    status=ninehire_status(r)
     apply=[target for target,label,_ in links(root,url) if '지원하기' in label and target!=url]
     # The same URL can contain multiple departments. Preserve a container until the host splits it.
     campaign=any(mark in content for mark in ('[세부 직무]','모집부문별','모집 부문별'))
     job=Job(str(r['addressKey']),r.get('externalTitle') or r['title'],r['companyName'],url,
             apply_url=apply[0] if apply else None,description=content,location=' / '.join(x.get('addressName','') for x in r.get('jobLocations',[])),
-            status=status,deadline=deadline(reception.get('endAt') or r.get('endAt')),published_at=r.get('createdAt'),
-            detail_verified=True,requires_role_split=campaign,raw={'provider':'ninehire','application_login_required':r.get('applicantLoginEnabled'),
+            status=status,deadline=ninehire_deadline(r),published_at=r.get('createdAt'),
+            detail_verified=True,requires_role_split=campaign,source_context={'ninehire_source_status':ninehire_source_status(r,post)},
+            application_opens_at=deadline(reception.get('startAt')).get('at'),raw={'provider':'ninehire','application_login_required':r.get('applicantLoginEnabled'),
                 'recruitment_id':r.get('recruitmentId'),'affiliation':(r.get('affiliation') or {}).get('title'),
                 'apply_action':'onsite button' if not apply else 'observed link'})
     return job
@@ -181,12 +209,13 @@ def parse_detail(kind,payload,url,settings):
         candidates.sort(key=lambda x:('지원' in x[1],'/o/'+str(r['openingId'])+'/' in x[0]),reverse=True)
         apply=candidates[0][0] if candidates else None
         employer=settings.get('employer') or (r.get('workspaceDivision') or {}).get('division') or data['groupInfo']['name']
+        media,inline,frames=media_references(html(markup.encode()),url)
         return Job(str(r['openingId']),r['title'],employer,url,apply_url=apply,
             description=description,location=' / '.join(locations),deadline=deadline(r.get('dueDate')),status='open' if r.get('status')=='OPEN' else 'closed' if r.get('status')=='CLOSED' else 'unknown',
-            detail_verified=bool(description),requires_role_split=len(positions)>1,
+            detail_verified=bool(description) and not (media or inline or frames),requires_role_split=len(positions)>1,
             source_context={'position_metadata':position_metadata} if position_metadata else {},
             raw={'provider':'greeting','employer_identity':'group display; individual legal employer needs confirmation',
-              'media_urls':[public_url(urljoin(url,n.attrs['src'])) for n in html(markup.encode()).walk('img') if n.attrs.get('src')]})
+              'media_urls':media,'inline_media':inline,'iframe_urls':frames})
     if kind=='lotte-detail':
         root=html(payload);head=next((n for n in root.walk() if n.has_class('board-head')),None)
         body=next((n for n in root.walk() if n.has_class('board-content')),None)
@@ -256,7 +285,14 @@ def parse_detail(kind,payload,url,settings):
         page=parse_jsonld(payload,url)
         if len(page.jobs)!=1:raise EngineError('platform detail requires host DOM/image inspection')
         # Structured metadata is a discovery signal, never live application confirmation.
-        return replace(page.jobs[0],status='unknown',requires_role_split=True)
+        job=replace(page.jobs[0],status='unknown',requires_role_split=True,detail_verified=False)
+        if kind=='jobkorea-detail':
+            from .jobkorea import observed_iframe
+            try:iframe=observed_iframe(payload,url,job.external_id)
+            except EngineError:iframe=None
+            job=replace(job,source_context={**job.source_context,'observed_description_iframe':iframe,
+                'metadata_only':True})
+        return job
     raise EngineError('unsupported detail contract; authorized host inspection required')
 
 def parse_korean_page(source,payload,cursor=None):

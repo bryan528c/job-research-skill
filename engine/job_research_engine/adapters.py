@@ -75,13 +75,16 @@ def request_url(source: dict, cursor: str | None) -> tuple[str,str | None]:
         if not 1<=page<=1000 or not 1<=size<=100:raise EngineError('Work24 documented pagination limit reached; partition source')
         query.update(params);query.update(callTp='L',returnType='XML',startPage=str(page),display=str(size))
         secret='WORK24_API_KEY'
-    elif kind not in {'host-json','jsonld','sitemap','ninehire-detail','applyin-list','applyin-detail','skcareers-list','skcareers-detail','linkareer-list','linkareer-detail','saramin-list','jobkorea-list','html-discovery','lotte-list','lotte-detail','greeting-list','greeting-detail'}:
+    elif kind not in {'host-json','jsonld','sitemap','ninehire-list','ninehire-detail','applyin-list','applyin-detail','skcareers-list','skcareers-detail','linkareer-list','linkareer-detail','saramin-list','jobkorea-list','html-discovery','lotte-list','lotte-detail','greeting-list','greeting-detail'}:
         raise EngineError('unsupported adapter; keep source in host work queue')
     return public_url(urlunsplit((p.scheme,p.netloc,p.path,urlencode(query),''))),secret
 
 
 def parse_page(source: dict, payload: bytes, cursor: str | None=None) -> Page:
     kind=source['kind'];settings=json.loads(source['settings_json']);employer=settings.get('employer')
+    if kind=='ninehire-list' or settings.get('inventory_contract')=='ninehire-rendered':
+        from .ninehire import parse_rendered_inventory
+        return parse_rendered_inventory(payload,source['url'],settings)
     from .groups import parse_cj_page,parse_cj_detail,parse_doosan_page,parse_doosan_detail
     if kind=='cj-list':return parse_cj_page(payload,cursor)
     if kind=='doosan-list':return parse_doosan_page(payload)

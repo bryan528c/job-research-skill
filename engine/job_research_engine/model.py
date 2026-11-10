@@ -119,6 +119,7 @@ class Job:
     detail_verified: bool = False
     requires_role_split: bool = False
     source_context: dict[str, Any] = field(default_factory=dict)
+    application_opens_at: str | None = None
 
     def validate(self) -> None:
         for label in ("external_id", "title", "employer", "round_key"):
@@ -132,6 +133,7 @@ class Job:
             raise EngineError("bad recruiting status")
         validate_deadline(self.deadline)
         if not isinstance(self.source_context,dict):raise EngineError('source context must be an observed metadata object')
+        if self.application_opens_at is not None:timestamp(self.application_opens_at)
 
     def content(self) -> dict[str, Any]:
         return {"external_id": self.external_id, "title": self.title,
@@ -142,7 +144,8 @@ class Job:
                 "published_at": self.published_at,
                 "detail_verified": self.detail_verified,
                 "requires_role_split": self.requires_role_split,
-                **({'source_context':self.source_context} if self.source_context else {})}
+                **({'source_context':self.source_context} if self.source_context else {}),
+                **({'application_opens_at':self.application_opens_at} if self.application_opens_at is not None else {})}
 
 
 @dataclass(frozen=True)

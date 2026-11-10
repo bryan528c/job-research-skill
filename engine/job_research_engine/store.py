@@ -12,7 +12,7 @@ from typing import Any, Iterator
 from .model import (EngineError, Job, LeaseLost, Page, canonical_time, digest, dump,
                     now, public_url, required, stable_id, timestamp)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS registry_snapshots(
@@ -30,6 +30,15 @@ CREATE TABLE IF NOT EXISTS company_memberships(
 CREATE TABLE IF NOT EXISTS company_aliases(
  alias_id TEXT PRIMARY KEY REFERENCES companies(id), canonical_id TEXT NOT NULL REFERENCES companies(id),
  reason TEXT NOT NULL, evidence_ref TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS company_aliases_root ON company_aliases(canonical_id);
+CREATE TABLE IF NOT EXISTS identifier_overrides(
+ id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), field TEXT NOT NULL,
+ source_value TEXT NOT NULL, corrected_value TEXT NOT NULL, evidence_json TEXT NOT NULL,
+ reason TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS identifier_overrides_active ON identifier_overrides(company_id,field) WHERE revoked_at IS NULL;
+CREATE TABLE IF NOT EXISTS identity_conflict_reviews(
+ id TEXT PRIMARY KEY, conflict_id TEXT NOT NULL REFERENCES identity_conflicts(id), disposition TEXT NOT NULL,
+ evidence_json TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sources(
  id TEXT PRIMARY KEY, company_id TEXT REFERENCES companies(id), kind TEXT NOT NULL,
  url TEXT NOT NULL, policy TEXT NOT NULL, evidence_ref TEXT NOT NULL,
@@ -63,7 +72,7 @@ CREATE TABLE IF NOT EXISTS observations(
  id TEXT PRIMARY KEY, source_id TEXT REFERENCES sources(id), task_id TEXT REFERENCES tasks(id),
  source_url TEXT NOT NULL, observed_at TEXT NOT NULL, origin TEXT NOT NULL,
  tool_ref TEXT, sha256 TEXT NOT NULL, media_type TEXT NOT NULL,
- payload BLOB NOT NULL, UNIQUE(source_id,sha256,observed_at));
+ payload BLOB NOT NULL, UNIQUE(source_id,source_url,sha256,observed_at));
 CREATE TABLE IF NOT EXISTS pages(
  task_id TEXT NOT NULL REFERENCES tasks(id), cursor_key TEXT NOT NULL,
  observation_id TEXT NOT NULL REFERENCES observations(id), next_cursor TEXT,
@@ -85,6 +94,9 @@ CREATE TABLE IF NOT EXISTS job_sightings(
  run_id TEXT NOT NULL REFERENCES runs(id), job_id TEXT NOT NULL REFERENCES jobs(id),
  task_id TEXT NOT NULL REFERENCES tasks(id), observation_id TEXT NOT NULL REFERENCES observations(id),
  PRIMARY KEY(run_id,job_id,task_id));
+CREATE TABLE IF NOT EXISTS inventory_detail_checks(
+ job_id TEXT NOT NULL REFERENCES jobs(id), observation_id TEXT NOT NULL REFERENCES observations(id),
+ observed_at TEXT NOT NULL, changes_json TEXT NOT NULL, PRIMARY KEY(job_id,observation_id));
 CREATE TABLE IF NOT EXISTS run_jobs(
  run_id TEXT NOT NULL REFERENCES runs(id), job_id TEXT NOT NULL REFERENCES jobs(id),
  carried INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(run_id,job_id));
@@ -97,7 +109,7 @@ CREATE TABLE IF NOT EXISTS assessments(
 CREATE INDEX IF NOT EXISTS assessments_latest ON assessments(profile_id,job_id,created_at);
 CREATE TABLE IF NOT EXISTS assessment_reporting(
  assessment_id TEXT PRIMARY KEY REFERENCES assessments(id), report_tier TEXT NOT NULL
- CHECK(report_tier IN ('actionable','source_gap','future_pool')));
+ CHECK(report_tier IN ('actionable','source_gap','future_pool','upcoming')));
 CREATE TABLE IF NOT EXISTS user_events(
  id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id),
  event_key TEXT NOT NULL, scope_type TEXT NOT NULL, target_id TEXT NOT NULL,
@@ -178,18 +190,52 @@ class Store:
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         old = self.db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if old and int(old[0]) not in {1, SCHEMA_VERSION}:
+        if old and int(old[0]) not in {1, 2, SCHEMA_VERSION}:
             self.db.close()
             raise EngineError("database schema mismatch; explicit migration/backup required")
-        if old and int(old[0]) == 1 and self.path:
-            backup = self.path.with_name(self.path.name + '.schema1-' + uuid.uuid4().hex + '.bak.sqlite')
+        if old and int(old[0]) != SCHEMA_VERSION and self.path:
+            backup = self.path.with_name(self.path.name + '.schema'+str(old[0])+'-' + uuid.uuid4().hex + '.bak.sqlite')
             target=sqlite3.connect(str(backup))
             try:
                 self.db.backup(target)
             finally:
                 target.close()
         self.db.executescript(SCHEMA)
+        self._migrate_observation_urls()
+        self._migrate_reporting_constraints()
         self.db.execute("INSERT INTO meta VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
+
+    def _migrate_observation_urls(self):
+        sql=self.db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='observations'").fetchone()[0]
+        if 'UNIQUE(source_id,source_url,sha256,observed_at)' in sql.replace(' ',''):return
+        # Different actual URLs can deliver identical bytes at one capture time.
+        # Their source identities must remain distinct. Existing IDs, BLOBs and
+        # all foreign keys survive; file-backed schema upgrades have a backup.
+        self.db.execute('PRAGMA foreign_keys=OFF')
+        try:
+            with self.transaction():
+                self.db.execute('''CREATE TABLE observations_url_migration(
+                    id TEXT PRIMARY KEY,source_id TEXT REFERENCES sources(id),task_id TEXT REFERENCES tasks(id),
+                    source_url TEXT NOT NULL,observed_at TEXT NOT NULL,origin TEXT NOT NULL,tool_ref TEXT,
+                    sha256 TEXT NOT NULL,media_type TEXT NOT NULL,payload BLOB NOT NULL,
+                    UNIQUE(source_id,source_url,sha256,observed_at))''')
+                self.db.execute('INSERT INTO observations_url_migration SELECT * FROM observations')
+                self.db.execute('DROP TABLE observations')
+                self.db.execute('ALTER TABLE observations_url_migration RENAME TO observations')
+                if self.db.execute('PRAGMA foreign_key_check').fetchone():raise EngineError('observation migration foreign-key mismatch')
+                self._log('schema','observations','preserve_distinct_source_urls',{'existing_ids_and_payloads_preserved':True})
+        finally:self.db.execute('PRAGMA foreign_keys=ON')
+
+    def _migrate_reporting_constraints(self):
+        sql=self.db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='assessment_reporting'").fetchone()[0]
+        if "'upcoming'" in sql:return
+        # Keep the complete original table as a private rollback copy. No old
+        # assessment, decision, report or reporting row is deleted/reinterpreted.
+        with self.transaction():
+            self.db.execute('ALTER TABLE assessment_reporting RENAME TO assessment_reporting_legacy_constraints')
+            self.db.execute("CREATE TABLE assessment_reporting(assessment_id TEXT PRIMARY KEY REFERENCES assessments(id), report_tier TEXT NOT NULL CHECK(report_tier IN ('actionable','source_gap','future_pool','upcoming')))")
+            self.db.execute('INSERT INTO assessment_reporting SELECT * FROM assessment_reporting_legacy_constraints')
+            self._log('schema','assessment_reporting','expand_upcoming',{'original_table_preserved':'assessment_reporting_legacy_constraints'})
 
     def close(self):
         self.db.close()
@@ -219,7 +265,7 @@ class Store:
                         (entity, identity, action, self._now(), dump(detail)))
 
     def row(self, table: str, identity: str) -> dict[str, Any]:
-        if table not in {"companies", "sources", "profiles", "runs", "tasks", "observations", "jobs", "reports"}:
+        if table not in {"companies", "sources", "profiles", "runs", "tasks", "observations", "jobs", "reports", "identifier_overrides", "identity_conflicts"}:
             raise EngineError("unsupported lookup")
         result = self.db.execute(f"SELECT * FROM {table} WHERE id=?", (identity,)).fetchone()
         if result is None:
@@ -334,6 +380,13 @@ class Store:
             (tid, run_id, kind, key, source_id, company_id, dump(payload or {}),
              priority, first_created or at, at))
         return tid
+
+    def _opening_recheck(self,run_id,jid,source_id,company_id,job):
+        if job.application_opens_at and timestamp(job.application_opens_at)>timestamp(self._now()):
+            opens=canonical_time(job.application_opens_at)
+            tid=self._enqueue(run_id,'job_detail',jid+':opening:'+opens,source_id=source_id,
+                company_id=company_id,payload={'job_id':jid,'url':job.job_url,'application_opens_at':opens},priority=20)
+            self.db.execute("UPDATE tasks SET not_before=? WHERE id=? AND status='queued'",(opens,tid))
 
     def plan_run(self, profile_id: str, *, scope: str = "broad", scope_note: str,
                  company_ids: list[str] | None = None, parent_run_id: str | None = None) -> str:
@@ -455,12 +508,19 @@ class Store:
             self._enqueue(run_id, "inventory", source_id, source_id=source_id, company_id=src["company_id"])
             self._log("run", run_id, "scope_expanded", {"source": source_id})
 
-    def claim(self, run_id: str, *, kinds: tuple[str, ...] = ("inventory",), lease_seconds: int = 120,task_id: str | None=None) -> dict | None:
+    def claim(self, run_id: str, *, kinds: tuple[str, ...] = ("inventory",), lease_seconds: int = 120,task_id: str | None=None,source_ids=None) -> dict | None:
         if lease_seconds <= 0 or not kinds:
             raise EngineError("positive lease and task kinds required")
         run = self.row("runs", run_id)
         if run["status"] != "running":
             raise EngineError("run is not running")
+        source_args=()
+        source_filter=''
+        if source_ids is not None:
+            if isinstance(source_ids,str):raise EngineError('source_ids must be a sequence of source IDs')
+            source_args=tuple(dict.fromkeys(source_ids))
+            if not source_args:return None
+            source_filter=' AND source_id IN ('+','.join('?' for _ in source_args)+')'
         at = self._now()
         until = (timestamp(at) + timedelta(seconds=lease_seconds)).isoformat(timespec="microseconds")
         placeholders = ",".join("?" for _ in kinds)
@@ -469,9 +529,9 @@ class Store:
             while True:
                 task = self.db.execute(f"""SELECT * FROM tasks WHERE run_id=? AND kind IN ({placeholders})
                     AND ((status='queued' AND not_before<=?) OR (status='leased' AND lease_until<=?))
-                    AND (? IS NULL OR id=?)
+                    AND (? IS NULL OR id=?){source_filter}
                     ORDER BY priority + (julianday(?) - julianday(created_at))*24 DESC,created_at,id LIMIT 1""",
-                    (run_id, *kinds, at, at, task_id, task_id, at)).fetchone()
+                    (run_id, *kinds, at, at, task_id, task_id, *source_args, at)).fetchone()
                 if task is None:
                     return None
                 if task['kind'] not in {'inventory','source_discovery','legacy_recheck'}:
@@ -556,6 +616,12 @@ class Store:
             (oid, task["source_id"], task["id"], source_url, at, origin, tool_ref, digest(payload), media_type, payload))
         return oid
 
+    def _job_company(self,source,employer,run_id,observation_id):
+        # An official homepage can link a whole group's board. Its registry
+        # owner is not automatically the legal employer of every posting.
+        unverified=json.loads(source['settings_json']).get('job_company_binding')=='unverified_homepage_reference'
+        return self._catalog_employer({**source,'company_id':None} if unverified else source,employer,run_id,observation_id)
+
     def _catalog_employer(self,source: dict,employer: str,run_id: str,observation_id: str) -> str:
         if source['company_id']:return source['company_id']
         # This is an unresolved source employer, not an asserted legal entity or size class.
@@ -605,7 +671,7 @@ class Store:
             source = self.row("sources", task["source_id"])
             inserted = []
             for job in page.jobs:
-                company_id=source['company_id'] or self._catalog_employer(source,job.employer,task['run_id'],oid)
+                company_id=self._job_company(source,job.employer,task['run_id'],oid)
                 jid = stable_id(source["id"], job.external_id, job.round_key)
                 content, encoded = job.content(), dump(job.content())
                 chash = digest(encoded)
@@ -614,6 +680,20 @@ class Store:
                 if old and at < old["last_seen"]:
                     self.db.execute("INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)", (task["run_id"],jid,task_id,oid))
                     self.db.execute("INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)", (task["run_id"],jid))
+                    continue
+                if old and old['detail_verified'] and not job.detail_verified:
+                    # A card is a new inventory sighting, not a new reading of
+                    # the full description. Preserve the detail clock, version
+                    # and evidence; retain material card changes separately.
+                    changes=self._listing_changes(content,json.loads(old['content_json']))
+                    self.db.execute('INSERT OR IGNORE INTO inventory_detail_checks VALUES(?,?,?,?)',(jid,oid,at,dump(changes)))
+                    self.db.execute('INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)',(task['run_id'],jid,task_id,oid))
+                    self.db.execute('INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)',(task['run_id'],jid))
+                    tid=self._enqueue(task['run_id'],'job_detail',jid,source_id=source['id'],company_id=company_id,
+                        payload={'job_id':jid,'url':job.job_url},priority=15)
+                    self.db.execute("UPDATE tasks SET status='queued',finished_at=NULL,not_before=? WHERE id=? AND status='done'",(self._now(),tid))
+                    self._log('job',jid,'inventory_sighting_detail_preserved',{'observation':oid,'changes':changes})
+                    inserted.append(jid)
                     continue
                 self.db.execute("""INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(id) DO UPDATE SET company_id=excluded.company_id,employer=excluded.employer,title=excluded.title,
@@ -628,6 +708,7 @@ class Store:
                 self.db.execute("INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)", (jid,chash,oid,at,encoded))
                 self.db.execute("INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)", (task["run_id"],jid,task_id,oid))
                 self.db.execute("INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)", (task["run_id"],jid))
+                self._opening_recheck(task['run_id'],jid,source['id'],company_id,job)
                 if not old or old["content_hash"] != chash:
                     self._log("job", jid, "new" if not old else "changed", {"observation": oid})
                 inserted.append(jid)
@@ -693,6 +774,15 @@ class Store:
             oid=self._observe(task,source_url,payload,media_type=media_type,origin=origin,tool_ref=tool_ref,observed_at=observed_at)
             at=self.row('observations',oid)['observed_at'];encoded=dump(job.content());chash=digest(encoded)
             previous=self.db.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone()
+            if previous and at<previous['last_seen'] and job.detail_verified and not previous['detail_verified'] and not json.loads(previous['content_json']).get('description'):
+                listing=self.db.execute('SELECT t.kind FROM observations o JOIN tasks t ON t.id=o.task_id WHERE o.id=?',(previous['latest_observation_id'],)).fetchone()
+                if listing and listing[0]=='inventory':
+                    # A newer title-only card is not a newer full description.
+                    # Import the actual older body at its original clock while
+                    # retaining any contradicting card fields as a review fence.
+                    changes=self._listing_changes(json.loads(previous['content_json']),job.content())
+                    self.db.execute('INSERT OR IGNORE INTO inventory_detail_checks VALUES(?,?,?,?)',(jid,previous['latest_observation_id'],previous['last_seen'],dump(changes)))
+                    previous=None
             if previous and at<previous['last_seen']:
                 current_observation=self.row('observations',previous['latest_observation_id'])
                 if current_observation['sha256']!=digest(payload) or current_observation['source_url']!=source_url:
@@ -703,7 +793,7 @@ class Store:
                 # rewind freshness or replace the newer source observation.
                 self._log('task',task_id,'equivalent_old_capture_reinterpreted',{'retained_capture':oid,'newer_source':current_observation['id']})
                 oid=current_observation['id'];at=previous['last_seen']
-            company_id=source['company_id'] or self._catalog_employer(source,job.employer,task['run_id'],oid)
+            company_id=self._job_company(source,job.employer,task['run_id'],oid)
             self.db.execute('''INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET company_id=excluded.company_id,employer=excluded.employer,title=excluded.title,
                 job_url=excluded.job_url,apply_url=excluded.apply_url,content_json=excluded.content_json,
@@ -714,6 +804,7 @@ class Store:
             self.db.execute('INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)',(jid,chash,oid,at,encoded))
             self.db.execute('INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)',(task['run_id'],jid,task_id,oid))
             self.db.execute('INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)',(task['run_id'],jid))
+            self._opening_recheck(task['run_id'],jid,source['id'],company_id,job)
             if job.status=='closed':
                 # A source may remove its description after closing a campaign.
                 # The explicit closure still governs its exact existing roles;
@@ -776,7 +867,7 @@ class Store:
                     raise EngineError('individual employer must appear in the observed campaign')
                 company_id=parent['company_id']
                 if employer!=parent['employer']:
-                    company_id=self._catalog_employer(self.row('sources',parent['source_id']),employer,run_id,parent['latest_observation_id'])
+                    company_id=self._catalog_employer({**self.row('sources',parent['source_id']),'company_id':None},employer,run_id,parent['latest_observation_id'])
                 child={**content,'external_id':external,'title':title,'employer':employer,'description':description,
                        'campaign_title':parent['title'],'requires_role_split':False,'parent_content_hash':parent['content_hash']}
                 if role.get('location'):child['location']=role['location']
@@ -865,13 +956,30 @@ class Store:
             self._log("task",task_id,"host_completed",{"observation":oid,"outcome":outcome})
         return oid
 
+    @staticmethod
+    def _listing_changes(listing,detail):
+        changes={}
+        for key in ('title','employer','job_url','apply_url','location','status','deadline'):
+            value=listing.get(key)
+            if not value or key=='status' and value=='unknown' or key=='deadline' and value.get('kind')=='unknown':continue
+            if value!=detail.get(key):changes[key]={'detail':detail.get(key),'inventory':value}
+        return changes
+
+    def _inventory_detail_conflict(self,job,*,include_parent=True):
+        check=self.db.execute('SELECT * FROM inventory_detail_checks WHERE job_id=? ORDER BY observed_at DESC,rowid DESC LIMIT 1',(job['id'],)).fetchone()
+        conflict=bool(check and check['observed_at']>job['last_seen'] and json.loads(check['changes_json']))
+        if include_parent and not conflict:
+            parent=self.db.execute("SELECT j.* FROM job_links l JOIN jobs j ON j.id=l.left_id WHERE l.right_id=? AND l.relation='role_child'",(job['id'],)).fetchone()
+            if parent:conflict=self._inventory_detail_conflict(parent,include_parent=False)
+        return conflict
+
     def assess(self, profile_id: str, job_id: str, *, decision: str, reason: str,
                evidence_ids: list[str], expected_profile_revision: int, expected_content_hash: str,
                risk: str = "", blocking_unknowns: list[str] | None = None,
                report_tier: str = 'actionable') -> str:
         if decision not in {"recommend", "check", "exclude"}:
             raise EngineError("decision must be recommend/check/exclude")
-        if report_tier not in {'actionable','source_gap','future_pool'} or decision!='check' and report_tier!='actionable':
+        if report_tier not in {'actionable','source_gap','future_pool','upcoming'} or decision!='check' and report_tier!='actionable':
             raise EngineError('only check decisions may retain non-actionable source gaps or future pools')
         required(reason,"assessment reason")
         if not evidence_ids:
@@ -885,7 +993,9 @@ class Store:
             if job["latest_observation_id"] not in evidence_ids:
                 raise EngineError("latest job evidence must be considered")
             unknowns = blocking_unknowns or []
-            if decision == "recommend" and (unknowns or job["recruiting_status"] != "open" or not job["detail_verified"] or json.loads(job['content_json']).get('requires_role_split') or job['external_id'].startswith('campaign:') and ':role:' not in job['external_id']):
+            content=json.loads(job['content_json'])
+            opens=content.get('application_opens_at')
+            if decision == "recommend" and (unknowns or self._inventory_detail_conflict(job) or job["recruiting_status"] != "open" or not job["detail_verified"] or content.get('requires_role_split') or opens and timestamp(opens)>timestamp(self._now()) or job['external_id'].startswith('campaign:') and ':role:' not in job['external_id']):
                 raise EngineError("recommendation lacks verified details or has a blocking unknown")
             aid = uuid.uuid4().hex
             self.db.execute("INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -944,7 +1054,10 @@ class Store:
                 ORDER BY created_at DESC,rowid DESC LIMIT 1""",(run["profile_id"],job["id"])).fetchone()
             state=self.latest_user_state(run["profile_id"],job)
             seen=self.db.execute("SELECT 1 FROM job_sightings WHERE run_id=? AND job_id=?",(run_id,job["id"])).fetchone() is not None
+            detail_seen=bool(job['detail_verified'] and self.db.execute('SELECT 1 FROM observations o JOIN tasks t ON t.id=o.task_id WHERE o.id=? AND t.run_id=?',(job['latest_observation_id'],run_id)).fetchone())
+            inventory_conflict=self._inventory_detail_conflict(job)
             current=bool(assessment and assessment["profile_revision"]==profile["revision"] and assessment["content_hash"]==job["content_hash"])
+            if inventory_conflict:current=False
             tier=self.db.execute('SELECT report_tier FROM assessment_reporting WHERE assessment_id=?',(assessment['id'],)).fetchone() if assessment else None
             content=json.loads(job['content_json'])
             parent=self.db.execute("SELECT j.content_hash FROM job_links l JOIN jobs j ON j.id=l.left_id WHERE l.right_id=? AND l.relation='role_child'",(job['id'],)).fetchone()
@@ -953,11 +1066,12 @@ class Store:
             # A remembered recommendation without a new check is preserved as check-first, not lost.
             if not current and assessment and assessment["decision"] in {"recommend","check"}:
                 effective="check"
-            if effective=="recommend" and not seen:
+            if effective=="recommend" and not detail_seen:
                 effective="check"
             job.update(content=json.loads(job["content_json"]),assessment=dict(assessment) if assessment else None,
                        report_tier=tier[0] if tier else 'actionable',
-                       assessment_current=current,user_state=state,seen_this_run=seen,effective_decision=effective)
+                       assessment_current=current,user_state=state,seen_this_run=seen,detail_observed_this_run=detail_seen,
+                       inventory_detail_conflict=inventory_conflict,effective_decision=effective)
             job["fresh_application"] = state["decision"]!="declined" and state["application"] in {"not_started","draft","written"}
             job['decomposed_campaign']=bool(self.db.execute("SELECT 1 FROM job_links WHERE left_id=? AND relation='role_child' LIMIT 1",(job['id'],)).fetchone())
             job['equivalent_decomposition']=bool(self.db.execute('''SELECT 1 FROM job_links l JOIN jobs other
@@ -969,7 +1083,8 @@ class Store:
                 (job['id'],job['id'],job['id'],job['content_hash'])).fetchone())
             from .report import past_deadline
             job['deadline_elapsed']=past_deadline(content['deadline'],self._now(),json.loads(profile['facts_json']).get('timezone','UTC'))
-            if job['recruiting_status']=='closed' or job['content'].get('requires_role_split') or job['decomposed_campaign'] or job['equivalent_decomposition'] or job['deadline_elapsed']:
+            job['application_not_open_yet']=bool(content.get('application_opens_at') and timestamp(content['application_opens_at'])>timestamp(self._now()))
+            if job['recruiting_status']=='closed' or job['content'].get('requires_role_split') or job['decomposed_campaign'] or job['equivalent_decomposition'] or job['deadline_elapsed'] or job['application_not_open_yet']:
                 job['fresh_application']=False
             result.append(job)
         return result
@@ -1038,7 +1153,7 @@ class Store:
                 continue
             if not job["assessment_current"]:
                 gaps.append({"type":"unreviewed_or_stale_candidate","id":job["id"]})
-            if not job["seen_this_run"]:
+            if not job["detail_observed_this_run"]:
                 gaps.append({"type":"carried_candidate_not_rechecked","id":job["id"]})
         profile=self.row("profiles",run["profile_id"])
         if profile["revision"] != run["profile_revision"]:

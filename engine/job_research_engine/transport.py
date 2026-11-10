@@ -9,7 +9,7 @@ import re
 import socket
 import ssl
 import time
-from urllib.parse import urlsplit, urljoin, urlencode,quote
+from urllib.parse import urlsplit, urljoin, urlencode,quote,parse_qsl
 from urllib.robotparser import RobotFileParser
 from .model import EngineError, public_url
 
@@ -59,7 +59,7 @@ class PublicHTTP:
             raise FetchError('private_address','DNS resolves to a non-public address')
         return addresses[0]
 
-    def _one(self,url: str,secret_query: dict[str,str] | None=None, *, form: dict | None=None,json_body: dict | None=None,public_tenant: str | None=None,gabia_site_info=False) -> Response:
+    def _one(self,url: str,secret_query: dict[str,str] | None=None, *, form: dict | None=None,json_body: dict | None=None,public_tenant: str | None=None,gabia_site_info=False,hyundai_public_read=False) -> Response:
         public_url(url);p=urlsplit(url);host=p.hostname.encode('idna').decode('ascii')
         port=p.port or (443 if p.scheme=='https' else 80);addr=self.resolve(host,port)
         wait=self.interval-(time.monotonic()-self.last.get(host,0))
@@ -85,6 +85,9 @@ class PublicHTTP:
             if gabia_site_info:
                 headers['x-career-site-domain']='gabia.com';headers['Origin']='https://recruit.gabia.com'
                 headers['Referer']='https://recruit.gabia.com/'
+            if hyundai_public_read:
+                headers['X-HKMC-SERVICE']='HM'
+                headers['Content-Type']='application/x-www-form-urlencoded'
             if form is not None:
                 body=urlencode(form).encode('utf-8');headers['Content-Type']='application/x-www-form-urlencoded'
                 headers['X-Requested-With']='XMLHttpRequest';headers['Referer']='https://www.skcareers.com/Recruit'
@@ -224,3 +227,39 @@ class PublicHTTP:
         if response.status>=500:raise FetchError('upstream_error','source unavailable',60)
         if response.status!=200:raise FetchError('http_'+str(response.status),'public Gabia read unavailable; redirects not followed')
         return response
+
+    def get_hyundai_detail(self,url: str) -> tuple[Response,Response]:
+        """Observed anonymous public detail GETs, gated by an explicit nonsecret flag.
+
+        No password route, applicant API, cookie, token, queue or session reuse.
+        The static HM routing header is the one published by the public UI.
+        """
+        if not self.enabled:raise FetchError('network_disabled','network access not enabled')
+        p=urlsplit(public_url(url));pairs=parse_qsl(p.query,keep_blank_values=True)
+        values=dict(pairs)
+        if (p.scheme!='https' or p.netloc!='talent.hyundai.com' or p.fragment
+            or p.path not in {'/apply/applyView.hc','/eng/apply/applyView.hc'}
+            or len(pairs)!=len(values) or set(values)-{'nfGubnC','recuYy','recuType','recuCls'}
+            or values.get('nfGubnC','')!=''
+            or not re.fullmatch(r'20[0-9]{2}',values.get('recuYy',''))
+            or not re.fullmatch(r'N[1-9][0-9]?',values.get('recuType',''))
+            or not re.fullmatch(r'[1-9][0-9]{0,5}',values.get('recuCls',''))):
+            raise FetchError('write_route_refused','only an observed public Hyundai job-detail identity is allowed')
+        query=urlencode({'hgrCd':'1','lang':'ko',**{k:values[k] for k in ('recuYy','recuType','recuCls')}})
+        base='https://talent.hyundai.com/api/rec/'
+        responses=[]
+        for route in ('AP-HM-FO-02900','AP-HM-FO-02800'):
+            target=base+route+'?'+query
+            if not self.permitted_by_robots(target):raise FetchError('robots_disallowed','public detail policy prevents native read')
+            response=self._one(target,hyundai_public_read=True)
+            if response.status==429:raise FetchError('rate_limited','source requested backoff',retry_delay(response.headers.get('retry-after')))
+            if response.status!=200:raise FetchError('http_'+str(response.status),'public Hyundai read unavailable; redirects not followed')
+            responses.append(response)
+            if route=='AP-HM-FO-02900':
+                try:flag=json.loads(response.body)['data']['applySecret']['recuNoticeSecretYn']
+                except (ValueError,KeyError,TypeError):flag=None
+                if flag!='N':
+                    error=FetchError('nonpublic_or_unknown_notice','explicit nonsecret N required; password routes are never called')
+                    error.public_gate_response=response
+                    raise error
+        return responses[0],responses[1]

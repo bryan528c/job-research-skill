@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
 import os
+import re
 import time
+from urllib.parse import urlsplit
 from .adapters import parse_page,request_url
 from .model import EngineError,LeaseLost
 from .store import Store
@@ -21,6 +23,8 @@ def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float |
         try:
             if source['policy'] in {'host_only','unreviewed'}:
                 raise FetchError('host_or_policy_review_required','source must be inspected through an authorized host or approved adapter')
+            if task['kind']=='inventory' and json.loads(source['settings_json']).get('inventory_requires_host'):
+                raise FetchError('host_inventory_required','Use the actual rendered list/end controls; native detail reads remain separate')
             url,secret_env=request_url(source,task['cursor'])
             if task['kind']!='inventory':
                 url=json.loads(task['payload_json']).get('url') or store.row('jobs',json.loads(task['payload_json'])['job_id'])['job_url']
@@ -31,13 +35,42 @@ def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float |
                 value=os.environ.get(secret_env)
                 if not value:raise FetchError('missing_credential',f'{secret_env} not configured; other sources continue')
                 secrets={'authKey':value}
-            if source['kind']=='skcareers-list' and task['kind']=='inventory':
+            from .domestic import KINDS as DOMESTIC_KINDS,request_spec,jobflex_request
+            from .korean import detect_kind
+            actual_kind=source['kind'] if task['kind']=='inventory' else detect_kind(url)
+            if (task['kind']!='inventory' and source['kind']=='greeting-list'
+                and urlsplit(url).netloc==urlsplit(source['url']).netloc
+                and re.fullmatch(r'/(?:ko/|en/)?o/[1-9][0-9]*/?',urlsplit(url).path)):
+                actual_kind='greeting-detail'
+            if actual_kind in {'gabia-list','gabia-detail'}:
+                from .legacy_sources import gabia_public_request,gabia_office_no
+                settings=json.loads(source['settings_json'])
+                if not settings.get('office_no'):
+                    info=transport.get_gabia(gabia_public_request('site-information')['url'])
+                    settings['office_no']=gabia_office_no(info.body)
+                    with store.transaction():
+                        store._check_lease(task['id'],task['lease_token'])
+                        store._observe(task,info.url,info.body,media_type='application/json',origin=getattr(transport,'evidence_origin','native_http'),tool_ref=None,observed_at=None)
+                        store.db.execute('UPDATE sources SET settings_json=? WHERE id=?',(json.dumps(settings),source['id']))
+                    source['settings_json']=json.dumps(settings)
+                api=gabia_public_request(actual_kind,url,office_no=settings['office_no'])['url']
+                response=transport.get_gabia(api)
+            elif actual_kind=='jobflex-detail':
+                api,prefix=jobflex_request(url);response=transport.get_jobflex(api,prefix)
+            elif actual_kind in DOMESTIC_KINDS:
+                api,fields=request_spec(actual_kind,url,task['cursor'] if task['kind']=='inventory' else None,json.loads(source['settings_json']))
+                response=transport.read_json(api,fields)
+            elif source['kind']=='skcareers-list' and task['kind']=='inventory':
                 if source['policy']!='public_read_form':raise FetchError('read_form_policy_required','public inventory form needs explicit reviewed policy')
                 response=transport.read_form(url,{'sort':'2','searchText':'','corpCode':'','jobRole':'','recruitType':'','workingType':'','workingRegion':'',**json.loads(source['settings_json']).get('filters',{})})
             else:response=transport.get(url,secret_query=secrets)
             if task['kind']!='inventory':
                 from .korean import detect_kind,parse_detail
-                job=parse_detail(detect_kind(url),response.body,url,json.loads(source['settings_json']))
+                detail_settings=json.loads(source['settings_json'])
+                prior_id=json.loads(task['payload_json']).get('job_id')
+                if actual_kind=='cj-detail' and prior_id:
+                    detail_settings['listing_job']=json.loads(store.row('jobs',prior_id)['content_json'])
+                job=parse_detail(actual_kind,response.body,url,detail_settings)
                 store.commit_detail(task['id'],task['lease_token'],job,source_url=response.url,payload=response.body,
                                     origin=getattr(transport,'evidence_origin','native_http'))
                 pages+=1;continue

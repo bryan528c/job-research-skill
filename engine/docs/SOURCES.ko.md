@@ -1,4 +1,4 @@
-# 실제 출처 계약 — 2026-11-09
+# 실제 출처 계약 — 2026-11-10
 
 원본·개인 상태는 공개 배포하지 않는다. 다음은 실제 Python 수집기와 private SQLite로 검증한 범위다.
 
@@ -13,7 +13,12 @@
 | Ninehire/Applyin | sitemap/목록→SSR·JSON 상세, 실제 이미지 열람→개별 직무 | 혼합 공채 분해 전 추천 차단. sitemap≠모집목록 완전성 |
 | Linkareer/사람인/잡코리아 | 공개 HTML 목록·실제 상세 GET, 공개 HTML Apollo 상태/JSON-LD 파싱 | visible links만으로 플랫폼 전체 완료 처리 안 함. 페이지 끝/이미지/지원 상태는 별도 검수 |
 | 롯데그룹/Greeting | 독립 누락 감사 후 실제 현재목록 13/13·9/9 적재, 상세·이미지 검수 큐 확장 | 전체 그룹/모든 ATS 대응은 미완료. 과거 Greeting landing의 만료 링크를 현재 공고로 승격하지 않음 |
-| 한화/LG/그 밖의 그룹·ATS | 실제 발견 링크를 discovery/host 큐로 유지 | JS shell·전용 상세/지원 검증 미완료. 비공개 API·로그인·캡차 우회 없음 |
+| LG Careers/한화인 | 공개 JSON 읽기 목록79/75와 모든 상세, 실제 개별123/66직무 | 11/10 목록79/73, 새1개 상세까지 확장. EDITOR의 숨은 stale unit은 업무로 사용하지 않음 |
+| Jobflex/큐셀 | 필터 없는 실제15페이지142카드, 현재6개 포스터/15직무 | 접수중 필터5개 누락을 반증. 공개 nonsecret tenant selector만 사용 |
+| 세스코·하이컨시·제이시스·가비아 | 공식84/11/28/13 전체목록·상세136개, 세스코 이미지74 실제 판독 | Ninehire 부서는 법인 아님. Greeting 개별 CTA/근무지, Gabia 공개 site-info/list/detail 계약. 제이시스 이미지1은 robots 차단 |
+| 한화오션 | 실제 연결11상세·포스터2·공개 모집분야 표·41직무 | 전체 Ocean 목록 아님. 별도 신입 회차/7차단경로도 추적 |
+| CJ/두산 | CJ14페이지138목록·상세138, 두산28목록·상세28/67저장직무 | CJ 현재107/종료31 구분. 부모/포털/Pool은 개별 공석 수와 다름. 빈칸 후속 자격행 보존 |
+| 현대자동차 | 정상 브라우저6페이지54목록/마지막 이동 종료 확인 | 전체 상세/지원 검수 미완료. 실제54경로를 host frontier로 보존, 접속 대기 우회 없음 |
 | Greenhouse/Ashby | 기존 공개 API 어댑터 유지 | 이 해외 경로로 한국 시장 검증을 대신하지 않음 |
 
 네 명부 출처 ID 130,200개는 한국의 고유 기업 수가 아니다. 원본행·적재 ID·공식 식별자 alias·
@@ -22,5 +27,10 @@
 
 명부는 total 변화·반복 페이지·마지막 페이지·첫 페이지 재검사를 검증한다. source snapshot
 complete는 해당 범위만 뜻하고 national_coverage는 unknown이다. HTTP는 공개 IP pinning,
-redirect 재검사, 크기/시간 상한, robots와 backoff를 적용한다. SK 검색 외 POST는 거부한다.
+redirect 재검사, 크기/시간 상한, robots와 backoff를 적용한다. 검토한 읽기 route 외 POST는 거부한다.
 공개 DART 엑셀과 인증키가 필요한 OpenDART corpCode는 별개다.
+
+LG/Hanwha의 POST는 정확히 검토한 익명 읽기 JSON route만 허용한다. SK 공개 검색 외 임의
+POST나 지원서 제출은 구현하지 않는다. Jobflex/Gabia/CJ는 관측한 공개 읽기 계약을 쓴다.
+`universe-audit`의 분모/실제 관측 귀속/미확정 채널과 그룹·ATS 별도 범위를 대조한다.
+[후속 실제 검증](VALIDATION.20261110.ko.md)을 이전 날짜의 기록과 구분한다.

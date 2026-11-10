@@ -34,6 +34,7 @@ CLI가 구현되어 있다. 설치된 스킬이 이 CLI를 실제 호출하고 �
 - `decision <event.json>`: 실제 사용자 결정/접수 상태. AI의 과거 추측을 확인 사실로 넣지 않는다.
 - `audit <record.json>`: 다른 경로 검증 및 새 후보 발견 후 확장. 근거 참조를 실제 도구 흔적과 대조.
 - `coverage <run-id>`: 로그 정합성과 미완료 검수. 전국 전체를 찾았다는 지표가 아니다.
+- `universe-audit <run-id> --dimension registry|industry|group`: 출처 분모와 실제 법인ID 귀속 관측/미확정 채널을 대조한다. cursor를 끝까지 읽고 그룹 채널 별도 범위를 보존한다.
 - `report <run-id> --text-only`: 짧은 링크 보고. 상세 통계는 기본 화면에 노출하지 않음.
 - `handoff <report-id> <number> --profile-id ...`: 사용자가 고른 공고만 인계. 최신 모집 재확인 필요 표시.
 
@@ -77,5 +78,8 @@ partition 하나를 전체 시장으로 취급하거나 스스로 분모를 줄�
 
 ## 실제 호환성
 
-이 전달본에서 확인된 것은 Python 3.13.5 Linux 컨테이너의 로컬 코드 동작뿐이다.
-GPT/Claude/Gemini 네이티브 스킬+엔진 연결, Windows 실행, Python 3.10, MCP, 예약 전달은 not_run이다.
+초기 인계의 Linux-only 상태와 현재 개발 실행은 다르다. 현재 PC는 Windows Python3.13.14와
+Codex의 실제 CLI/비공개 DB/브라우저 연결을 실행했다. runtime 포함 개발 ZIP은 격리 추출해
+검사한다. Python3.10/3.13×Windows/Linux CI는 해당 commit의 Actions 결과를 확인한다.
+Claude/Gemini/채팅 전용 호스트·MCP·예약 전달은 not_run이다. 기존 설치 스킬 교체나 계정
+전체 활성화를 했다는 뜻은 아니다.

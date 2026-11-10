@@ -22,7 +22,7 @@ class _Text(HTMLParser):
 
 
 def plain(value: str) -> str:
-    p=_Text();p.feed(unescape(value or ''));return '\n'.join(s.strip() for s in ''.join(p.parts).splitlines() if s.strip())
+    p=_Text();p.feed(unescape(value or ''));p.close();return '\n'.join(s.strip() for s in ''.join(p.parts).splitlines() if s.strip())
 
 
 def _json(payload: bytes):
@@ -48,6 +48,13 @@ def request_url(source: dict, cursor: str | None) -> tuple[str,str | None]:
     """Return a credential-free endpoint plus an optional environment variable name."""
     settings=json.loads(source['settings_json'])
     kind=source['kind'];url=public_url(source['url']);p=urlsplit(url)
+    from .groups import cj_request,detect_kind as group_kind
+    if kind=='cj-list':return cj_request(url,cursor,settings),None
+    if kind in {'doosan-list','doosan-detail','cj-detail'}:
+        if group_kind(url)!=kind:raise EngineError('group public route mismatch')
+        return url,None
+    from .domestic import KINDS
+    if kind in KINDS or kind in {'jobflex-detail','gabia-list','gabia-detail'}:return url,None
     query=dict(parse_qsl(p.query,keep_blank_values=True));secret=None
     if kind=='greenhouse':
         if p.hostname!='boards-api.greenhouse.io' or not re.fullmatch(r'/v1/boards/[^/]+/jobs',p.path.rstrip('/')):
@@ -75,6 +82,19 @@ def request_url(source: dict, cursor: str | None) -> tuple[str,str | None]:
 
 def parse_page(source: dict, payload: bytes, cursor: str | None=None) -> Page:
     kind=source['kind'];settings=json.loads(source['settings_json']);employer=settings.get('employer')
+    from .groups import parse_cj_page,parse_cj_detail,parse_doosan_page,parse_doosan_detail
+    if kind=='cj-list':return parse_cj_page(payload,cursor)
+    if kind=='doosan-list':return parse_doosan_page(payload)
+    if kind=='doosan-detail':return Page([parse_doosan_detail(payload,source['url'],settings)],True,expected_total=1,scope_note='One public Doosan detail, not a group inventory')
+    if kind=='cj-detail':return Page([parse_cj_detail(payload,source['url'],settings)],True,expected_total=1,scope_note='One public CJ detail, not a group inventory')
+    from .domestic import KINDS,parse_page as domestic_page
+    if kind in KINDS:return domestic_page(source,payload,cursor)
+    if kind in {'gabia-list','gabia-detail'}:
+        from .legacy_sources import parse_page as legacy_page,parse_gabia_detail
+        return legacy_page(source,payload,cursor) if kind=='gabia-list' else Page([parse_gabia_detail(payload,source['url'],settings)],True,expected_total=1,scope_note='One actual Gabia detail, inventory separate')
+    if kind=='jobflex-detail':
+        from .domestic import parse_jobflex_detail
+        return Page([parse_jobflex_detail(payload,source['url'],settings)],True,expected_total=1,scope_note='One public Jobflex detail; employer inventory is separate')
     if kind in {'ninehire-detail','applyin-list','applyin-detail','skcareers-list','skcareers-detail','linkareer-list','linkareer-detail','saramin-list','jobkorea-list','html-discovery','lotte-list','lotte-detail','greeting-list','greeting-detail'}:
         from .korean import parse_korean_page
         return parse_korean_page(source,payload,cursor)

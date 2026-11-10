@@ -1,13 +1,14 @@
 # Job Research
 
-Development branch `0.3.0-alpha.2` adds an executable local-first Python/SQLite engine.
-See [engine runtime](engine/README.md) and [separate live/local validation](engine/docs/VALIDATION.20261109.ko.md).
+Development branch `0.3.0-alpha.3` adds an executable local-first Python/SQLite engine.
+See [engine runtime](engine/README.md), [continuation validation](engine/docs/VALIDATION.20261110.ko.md)
+and the [previous validation snapshot](engine/docs/VALIDATION.20261109.ko.md).
 Native development ZIPs include the runtime; portable text remains instruction-only.
 Existing installations and schedules are not changed. This is not a nationwide market-completion claim.
 
 **“나한테 맞는 공고 찾아줘.” → 근거 있는 짧은 추천과 직접 링크 → 선택한 공고만 지원 준비.**
 
-`0.2.0-rc.2` · 개발 프리뷰 · ChatGPT Work 명시 호출/실제 웹조사 일부 검증 · 다른 호스트 미실행
+`0.3.0-alpha.3` · 개발 프리뷰 · 현재 PC의 실제 엔진·웹조사 검증 · 다른 호스트 미실행
 
 ## 가장 쉬운 시작
 

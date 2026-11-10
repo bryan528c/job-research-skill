@@ -41,11 +41,12 @@ def parse_ninehire(payload,url):
     apply=[target for target,label,_ in links(root,url) if '지원하기' in label and target!=url]
     # The same URL can contain multiple departments. Preserve a container until the host splits it.
     campaign=any(mark in content for mark in ('[세부 직무]','모집부문별','모집 부문별'))
-    job=Job(str(r['addressKey']),r.get('externalTitle') or r['title'],(r.get('affiliation') or {}).get('title') or r['companyName'],url,
+    job=Job(str(r['addressKey']),r.get('externalTitle') or r['title'],r['companyName'],url,
             apply_url=apply[0] if apply else None,description=content,location=' / '.join(x.get('addressName','') for x in r.get('jobLocations',[])),
             status=status,deadline=deadline(reception.get('endAt') or r.get('endAt')),published_at=r.get('createdAt'),
             detail_verified=True,requires_role_split=campaign,raw={'provider':'ninehire','application_login_required':r.get('applicantLoginEnabled'),
-                'recruitment_id':r.get('recruitmentId'),'apply_action':'onsite button' if not apply else 'observed link'})
+                'recruitment_id':r.get('recruitmentId'),'affiliation':(r.get('affiliation') or {}).get('title'),
+                'apply_action':'onsite button' if not apply else 'observed link'})
     return job
 
 def parse_applyin(payload,url,*,detail=False):
@@ -78,7 +79,16 @@ def parse_sk(payload,url):
     blocks=[n.text() for n in root.walk() if n.has_class('detail-content-item')]
     content='\n'.join(blocks)
     main=next((n for n in root.walk('main')),root);text=main.text()
-    if not title or not content:raise EngineError('SK job detail contract missing')
+    identity=urlsplit(url).path.rsplit('/',1)[-1]
+    media=[]
+    for node in main.walk('img'):
+        target=urljoin(url,node.attrs.get('src',''));parsed=urlsplit(target)
+        # Accept only this notice's observed poster, never shared site imagery.
+        if (parsed.hostname=='d3g1pwhebgacef.cloudfront.net'
+                and parsed.path.startswith('/JobNotice/'+identity+'/Info/')):
+            target=public_url(target)
+            if target not in media:media.append(target)
+    if not title or not (content.strip() or media):raise EngineError('SK job detail contract missing')
     fields={}
     if sidebar:
         for item in sidebar.walk():
@@ -109,12 +119,21 @@ def parse_sk(payload,url):
         # Parse only an inert, literal navigation target. Never evaluate onclick code.
         match=re.fullmatch(r'''location\.href\s*=\s*["']([^"']+)["'];?''',n.attrs.get('onclick','').strip())
         if match:apply_url=public_url(urljoin(url,match.group(1)))
-    return Job(urlsplit(url).path.rsplit('/',1)[-1],title,employer,url,description=content,apply_url=apply_url,
-               deadline=end,status='closed' if closed else 'open' if open_button else 'unknown',detail_verified=True,
-               raw={'provider':'skcareers','apply_action':'onsite login-required button'})
+    return Job(identity,title,employer,url,description=content,apply_url=apply_url,
+               location=fields.get('근무지') or fields.get('근무지역') or fields.get('Location') or '',
+               deadline=end,status='closed' if closed else 'open' if open_button else 'unknown',detail_verified=bool(content.strip()),
+               requires_role_split=not bool(content.strip()),source_context=fields,
+               raw={'provider':'skcareers','apply_action':'onsite login-required button','media_urls':media})
 
 def detect_kind(url):
+    from .groups import detect_kind as group_kind
+    if (kind:=group_kind(url)):return kind
+    from .domestic import detect_kind as domestic_kind
+    if (kind:=domestic_kind(url)):return kind
+    from .legacy_sources import detect_kind as legacy_kind
+    if (kind:=legacy_kind(url)):return kind
     p=urlsplit(url)
+    if (p.hostname or '').endswith('.recruiter.co.kr') and re.fullmatch(r'/career/jobs/[1-9][0-9]*/?',p.path):return 'jobflex-detail'
     if p.hostname=='www.skcareers.com' and p.path.startswith('/Recruit/Detail/'):return 'skcareers-detail'
     if '/job_posting/' in p.path:return 'ninehire-detail'
     if (p.hostname or '').endswith('.applyin.co.kr'):
@@ -123,10 +142,21 @@ def detect_kind(url):
     if (p.hostname or '').endswith('saramin.co.kr') and '/jobs/relay/view' in p.path:return 'saramin-detail'
     if (p.hostname or '').endswith('jobkorea.co.kr') and '/recruit/gi_read/' in p.path.lower():return 'jobkorea-detail'
     if p.hostname=='recruit.lotte.co.kr':return 'lotte-detail' if '/announcement/detail/' in p.path else 'lotte-list'
-    if (p.hostname or '').endswith('.career.greetinghr.com'):return 'greeting-detail' if re.search(r'/(?:ko/|en/)?o/\d+',p.path) else 'greeting-list'
+    if (p.hostname or '').endswith('.career.greetinghr.com') or p.hostname=='recruit-hanwhaocean.com':return 'greeting-detail' if re.search(r'/(?:ko/|en/)?o/\d+',p.path) else 'greeting-list'
     return 'html-discovery'
 
 def parse_detail(kind,payload,url,settings):
+    if kind=='cj-detail':
+        from .groups import parse_cj_detail
+        return parse_cj_detail(payload,url,settings)
+    if kind=='doosan-detail':
+        from .groups import parse_doosan_detail
+        return parse_doosan_detail(payload,url,settings)
+    from .domestic import KINDS,parse_detail as domestic_detail,parse_jobflex_detail
+    if kind=='jobflex-detail':return parse_jobflex_detail(payload,url,settings)
+    if kind in KINDS:return domestic_detail(kind,payload,url,settings)
+    from .legacy_sources import parse_gabia_detail,parse_ninehire_detail
+    if kind=='gabia-detail':return parse_gabia_detail(payload,url,settings)
     if kind=='greeting-detail':
         root=html(payload);data=next_data(root);result=None
         for query in data.get('dehydratedState',{}).get('queries',[]):
@@ -134,9 +164,27 @@ def parse_detail(kind,payload,url,settings):
         if not result or not result.get('success'):raise EngineError('Greeting detail data missing; not a closed-round assumption')
         data=result['data'];r=data['openingsInfo'];markup=r.get('detail') or '';description=text_html(markup)
         positions=(data.get('jobPositionSetting') or {}).get('jobPositions') or []
-        return Job(str(r['openingId']),r['title'],settings.get('employer') or data['groupInfo']['name'],url,
-            description=description,deadline=deadline(r.get('dueDate')),status='open' if r.get('status')=='OPEN' else 'closed' if r.get('status')=='CLOSED' else 'unknown',
+        # Greeting's location is a user-defined place label, often the company
+        # name. The separate place field holds the actual address.
+        locations=[];position_metadata=[]
+        for p in positions:
+            place=p.get('workspacePlace') or {};career=p.get('jobPositionCareer') or {};employment=p.get('jobPositionEmployment') or {}
+            address=place.get('place') if isinstance(place.get('place'),str) else ''
+            label=place.get('location') if isinstance(place.get('location'),str) else ''
+            value=address or label
+            if value and value not in locations:locations.append(value)
+            position_metadata.append({'position_id':p.get('id'),'place_label':label,'address':address,
+                'career':{k:career[k] for k in ('careerType','careerFrom','careerTo') if k in career},
+                'employment_type':employment.get('employmentType')})
+        candidates=[(u,label.strip()) for u,label,_ in links(root,url) if label.strip() in {'지원하기','입사지원','Apply','Apply now','Apply Now'}
+                    and not re.fullmatch(r'/(?:ko/|en/)?(?:apply|recruit|home)/?',urlsplit(u).path)]
+        candidates.sort(key=lambda x:('지원' in x[1],'/o/'+str(r['openingId'])+'/' in x[0]),reverse=True)
+        apply=candidates[0][0] if candidates else None
+        employer=settings.get('employer') or (r.get('workspaceDivision') or {}).get('division') or data['groupInfo']['name']
+        return Job(str(r['openingId']),r['title'],employer,url,apply_url=apply,
+            description=description,location=' / '.join(locations),deadline=deadline(r.get('dueDate')),status='open' if r.get('status')=='OPEN' else 'closed' if r.get('status')=='CLOSED' else 'unknown',
             detail_verified=bool(description),requires_role_split=len(positions)>1,
+            source_context={'position_metadata':position_metadata} if position_metadata else {},
             raw={'provider':'greeting','employer_identity':'group display; individual legal employer needs confirmation',
               'media_urls':[public_url(urljoin(url,n.attrs['src'])) for n in html(markup.encode()).walk('img') if n.attrs.get('src')]})
     if kind=='lotte-detail':
@@ -147,16 +195,22 @@ def parse_detail(kind,payload,url,settings):
         employer=next((n.text() for n in head.walk() if n.has_class('board-type')),'')
         dates=next((n.text() for n in head.walk() if n.has_class('date-detail')),'')
         end=re.findall(r'\d{4}\.\d{2}\.\d{2}',dates)
+        closes=deadline(end[-1].replace('.','-')) if end else {'kind':'unknown'}
+        period=re.search(r'접수기간\s*:?\s*(.*?)접수방법',body.text())
+        if period and closes['kind']=='date':
+            matches=re.findall(r'(\d{4})[년.\-/]\s*(\d{1,2})[월.\-/]\s*(\d{1,2})(?:일)?\s*(?:\([^)]*\))?\s*(\d{1,2}):(\d{2})',period.group(1))
+            clocks={f'{int(h):02d}:{int(m):02d}' for y,mo,d,h,m in matches if f'{int(y):04d}-{int(mo):02d}-{int(d):02d}'==closes['date']}
+            if len(clocks)==1:closes={'kind':'datetime','at':closes['date']+'T'+next(iter(clocks))+':00+09:00'}
         identity=urlsplit(url).path.rstrip('/').rsplit('/',1)[-1]
         apply=None
         if any(re.fullmatch(r"goNext\('"+re.escape(identity)+r"'\)",n.attrs.get('onclick','')) for n in root.walk('a')) and '/apply/terms/' in root.raw_text():
             apply=public_url(urljoin(url,'/apply/terms/'+identity))
         return Job(identity,title,employer,url,apply_url=apply,description=body.text(),
-            deadline=deadline(end[-1].replace('.','-')) if end else {'kind':'unknown'},
+            deadline=closes,
             status='open' if '접수중' in head.text() else 'closed' if '접수마감' in head.text() else 'unknown',
             detail_verified=bool(body.text()),requires_role_split=True,
             raw={'provider':'lotte','media_urls':[public_url(urljoin(url,n.attrs['src'])) for n in body.walk('img') if n.attrs.get('src')]})
-    if kind=='ninehire-detail':return parse_ninehire(payload,url)
+    if kind=='ninehire-detail':return parse_ninehire_detail(payload,url)
     if kind=='skcareers-detail':return parse_sk(payload,url)
     if kind=='applyin-detail':
         jobs,_=parse_applyin(payload,url,detail=True)
@@ -221,7 +275,7 @@ def parse_korean_page(source,payload,cursor=None):
             if r.get('deploy') is not True:continue
             identity=str(r['openingId'])
             if identity not in observed:raise EngineError('Greeting opening has no observed public detail link')
-            employer=(r.get('workspaceDivision') or {}).get('division') or (r.get('group') or {}).get('name') or settings.get('employer')
+            employer=settings.get('employer') or (r.get('workspaceDivision') or {}).get('division') or (r.get('group') or {}).get('name')
             if not employer:raise EngineError('Greeting displayed employer missing')
             jobs.append(Job(identity,r['title'],employer,observed[identity],deadline=deadline(r.get('dueDate')),published_at=r.get('openDate'),detail_verified=False))
         return Page(jobs,True,expected_total=len(jobs),scope_note='Public server-rendered Greeting openings only; legal employer/individual details still require validation')

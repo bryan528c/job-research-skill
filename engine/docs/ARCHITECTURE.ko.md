@@ -22,6 +22,7 @@
 - observations: 실제 수집 또는 호스트 내보내기/fixture 구분, 원문·해시·도구 참조.
 - jobs/job_versions/job_sightings: 역할·회차·출처 ID, 변경 이력과 이번 회차 관찰.
 - profiles/assessments/user_events: 평가 버전, 사용자 결정·제출/전형을 모집 상태와 분리.
+- assessment_reporting: schema2에 추가한 선택 metadata. 중요 확인, 원문 공백, 미래 Pool을 구분하며 추천은 숨김 tier를 허용하지 않는다. 보고 감사는 별도 보존 gap ID도 대조한다.
 - legacy_records: 예전 대화의 후보를 근거 수준 그대로 회복. 미해결을 완료로 바꾸지 않음.
 - audit_checks/reports: 다른 경로 검수, 발견 후 추가 조사, 추천-보고 일치와 번호 매핑.
 
@@ -56,11 +57,11 @@ profile_revision이 바뀐다. 예전 추천은 사라지지 않고 '재확인'�
 
 목록에서 안 보이면 missing_job_recheck. 출처가 실패하면 해당 출처 공고를 일괄 마감하지 않는다.
 날짜만 있는 마감에 23:59를 만들지 않는다. 표시 마감 경과와 원문이 여전히 open인 충돌은
-보고에서 확인 필요로 보여주며, 지원 결과를 불합격으로 바꾸지 않는다.
+연장 확인 대기로 보존하며 신규 지원 조언에서는 제외한다. 지원 결과를 불합격으로 바꾸지 않는다.
 
 ## 보안/권한
 
-GET HTTP 및 명시적 allowlist의 공개 SK 목록 검색 POST, 승인된 출처 정책, 공개 IP 확인 후 IP 고정 연결, 리다이렉트별 재검사,
+GET HTTP 및 명시적 allowlist의 공개 SK 검색/LG·한화 읽기 JSON POST, 승인된 출처 정책, 공개 IP 확인 후 IP 고정 연결, 리다이렉트별 재검사,
 credential-bearing redirect 거부, 크기·시간 상한, 429 backoff, robots 확인을 구현했다.
 캡차·로그인·약관 제한을 우회하지 않는다. robots 허용만으로 약관 동의를 대체하지 않는다.
 실제 LLM 외부 호출·메모리 가져오기·원격 저장·지원서 제출은 이 모듈이 수행하지 않는다.

@@ -9,6 +9,12 @@ import zipfile
 from .model import EngineError, digest, public_url
 from .store import Store
 
+def normalize_stock_code(value):
+    """KRX IDs may contain letters; never delete characters into another identity."""
+    text=str(value or '').strip().upper()
+    if text.isascii() and text.isdigit() and len(text)<=6:text=text.zfill(6)
+    return text if re.fullmatch(r'[A-Z0-9]{6}',text) and text!='000000' else None
+
 
 def safe_xml(payload: bytes) -> ET.Element:
     if b'<!DOCTYPE' in payload.upper() or b'<!ENTITY' in payload.upper():
@@ -63,9 +69,8 @@ def krx_html_rows(payload: bytes) -> list[dict]:
     for row in p.rows:
         if '회사명' in row and '종목코드' in row:header=row;continue
         if header and len(row)==len(header):
-            r=dict(zip(header,row));code=r['종목코드'].strip()
-            if code.isdigit():code=code.zfill(6)
-            if not re.fullmatch(r'[A-Za-z0-9]{6}',code):raise EngineError('KRX row missing valid listing identity')
+            r=dict(zip(header,row));code=normalize_stock_code(r['종목코드'])
+            if not code:raise EngineError('KRX row missing valid listing identity')
             site=(r.get('홈페이지') or '').strip()
             if site:
                 try:site=public_url(site if '://' in site else 'https://'+site)

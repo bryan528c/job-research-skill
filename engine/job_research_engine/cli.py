@@ -12,7 +12,7 @@ from .worker import collect,import_host_capture
 from .report import render,handoff
 from .registries import sync_registry,PROVIDERS
 from .identity import reconcile,unlink_company
-from .runtime import session,packet,summary
+from .runtime import session,packet,summary,universe_audit
 from .discovery import discover
 from .legacy import recheck_legacy
 from .model import Job
@@ -32,6 +32,7 @@ def main(argv=None) -> int:
     q=s.add_parser('unlink-company');q.add_argument('alias_id');q.add_argument('--reason',required=True)
     q=s.add_parser('session');q.add_argument('profile_id');q.add_argument('request');q.add_argument('--new-cycle',action='store_true');q.add_argument('--host',default='codex')
     q=s.add_parser('summary');q.add_argument('run_id')
+    q=s.add_parser('universe-audit');q.add_argument('run_id');q.add_argument('--dimension',choices=['registry','industry','group'],default='registry');q.add_argument('--after',default='');q.add_argument('--page-size',type=int,default=100)
     q=s.add_parser('expand-employers');q.add_argument('run_id')
     q=s.add_parser('discover');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=30)
     q=s.add_parser('recheck-legacy');q.add_argument('run_id');q.add_argument('--allow-network',action='store_true');q.add_argument('--budget-seconds',type=float,default=35)
@@ -68,6 +69,7 @@ def main(argv=None) -> int:
             elif cmd=='unlink-company':unlink_company(store,a.alias_id,reason=a.reason);result={'unlinked':a.alias_id}
             elif cmd=='session':result=session(store,a.profile_id,request=a.request,host=a.host,new_cycle=a.new_cycle)
             elif cmd=='summary':result=summary(store,a.run_id)
+            elif cmd=='universe-audit':result=universe_audit(store,a.run_id,dimension=a.dimension,after=a.after,page_size=a.page_size)
             elif cmd=='expand-employers':result={'job_employers_added_to_unresolved_frontier':store.expand_employer_frontier(a.run_id)}
             elif cmd=='discover':result=discover(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds)
             elif cmd=='recheck-legacy':result=recheck_legacy(store,a.run_id,transport=PublicHTTP(enabled=a.allow_network),budget_seconds=a.budget_seconds)

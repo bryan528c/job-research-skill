@@ -35,10 +35,14 @@ creates a repeat with all earlier candidates. Use `sync-registry krx|dart-web|ft
 to acquire actual official snapshots, resuming page checkpoints. `reconcile-companies` links only
 shared official identifiers and retains reversible evidence. Review counts as source records, never
 as a national unique-company census. MME certificates may have been cancelled.
+Use paged `universe-audit --dimension registry|industry|group` to compare the registered
+scope with actually attributed observations and unresolved channels. A group/ATS scan
+without verified legal-entity bindings is separate from constituent-company coverage.
 
 Use `discover`, `collect --details`, `recheck-legacy` and paged `packet` for actual work. Supply
 `--allow-network` only on authorized read paths. Page sizes are context windows, not stop targets.
-The one allowlisted SK form uses read-only POST search; no application POST is implemented.
+Reviewed SK form and LG/Hanwha JSON queries use exact public read-only POST routes;
+Jobflex and Gabia use bounded anonymous GET contracts. No application POST is implemented.
 Image-only descriptions require real host inspection through `capture-detail`; campaigns require
 `split-job` with observed individual role sections before recommendations.
 

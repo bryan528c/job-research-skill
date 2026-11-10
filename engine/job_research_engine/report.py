@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 import json
 import re
 from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
@@ -9,6 +9,12 @@ from .store import Store
 
 def md(value) -> str:
     return re.sub(r'([\\`*_{}\[\]<>])',r'\\\1',' '.join(str(value).split()))
+
+def local_zone(name):
+    try:return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        # The Korean source contract remains usable on stdlib-only Windows.
+        return timezone(timedelta(hours=9)) if name=='Asia/Seoul' else timezone.utc if name in {'UTC','Etc/UTC'} else None
 
 
 def deadline_label(d: dict) -> str:
@@ -26,8 +32,7 @@ def deadline_key(d: dict,zone: str) -> tuple:
     # because its time is unknown, not because it was asserted to be midnight.
     if d['kind']=='datetime':
         dt=timestamp(d['at'])
-        try:local=dt.astimezone(ZoneInfo(zone))
-        except ZoneInfoNotFoundError:local=dt
+        tz=local_zone(zone);local=dt.astimezone(tz) if tz else dt
         return (0,local.date().isoformat(),1,dt.isoformat())
     if d['kind']=='date':return (0,d['date'],0,'')
     return (1,'',0,'')
@@ -36,8 +41,9 @@ def deadline_key(d: dict,zone: str) -> tuple:
 def past_deadline(d:dict,asof: str,zone: str) -> bool:
     if d['kind']=='datetime':return timestamp(d['at'])<timestamp(asof)
     if d['kind']=='date':
-        try:local=timestamp(asof).astimezone(ZoneInfo(d.get('timezone') or zone))
-        except ZoneInfoNotFoundError:return False
+        tz=local_zone(d.get('timezone') or zone)
+        if tz is None:return False
+        local=timestamp(asof).astimezone(tz)
         return d['date']<local.date().isoformat()
     return False
 
@@ -46,10 +52,11 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
     run=store.row('runs',run_id);profile=store.row('profiles',run['profile_id'])
     facts=json.loads(profile['facts_json']);zone=facts.get('timezone','UTC')
     rows=store.list_run_jobs(run_id);coverage=store.coverage(run_id)
-    actionable=[j for j in rows if j['fresh_application'] and j['recruiting_status']!='closed' and j['effective_decision'] in {'recommend','check'}]
+    actionable=[j for j in rows if j['fresh_application'] and j['recruiting_status']!='closed' and j['effective_decision'] in {'recommend','check'} and j['report_tier']=='actionable']
     actionable.sort(key=lambda j:(deadline_key(j['content']['deadline'],zone),j['employer'],j['title'],j['id']))
     # Preserve every worthwhile candidate. Age/freshness warnings never delete its identity.
-    day=timestamp(store._now()).date().isoformat()
+    tz=local_zone(zone);asof=timestamp(store._now())
+    day=(asof.astimezone(tz) if tz else asof).date().isoformat()
     lines=[f'## {day} 채용 리서치','']
     recs=sum(j['effective_decision']=='recommend' and not past_deadline(j['content']['deadline'],store._now(),zone) for j in actionable)
     lines.append(conclusion or (f'지원 검토 {recs}건, 확인 필요 {len(actionable)-recs}건.' if actionable else '확인된 추천이 아직 없어.'))
@@ -73,6 +80,12 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
         mapping.append({'number':num,'job_id':j['id'],'content_hash':j['content_hash'],'effective_decision':decision})
     pending=sum(j['effective_decision']=='pending' and j['fresh_application'] and j['recruiting_status']!='closed' for j in rows)
     if pending:lines.extend([f'평가 전 후보 {pending}건은 제외하지 않고 보존했어.',''])
+    elapsed=sum(j['deadline_elapsed'] and j['recruiting_status']!='closed' and j['effective_decision'] in {'recommend','check'} for j in rows)
+    if elapsed:lines.extend([f'표시된 마감이 지난 기존 후보 {elapsed}건은 연장·새 회차 확인 대기로 보존했어.',''])
+    gaps=[j for j in rows if j['effective_decision']=='check' and j['report_tier']!='actionable']
+    if gaps:
+        lines.extend(['원문 보완 대기와 미래 인재풀은 현재 지원 검토와 구분해 보존했어.',''])
+    coverage={**coverage,'retained_non_actionable_checks':[{'job_id':j['id'],'content_hash':j['content_hash'],'report_tier':j['report_tier']} for j in gaps]}
     if coverage['status']!='scope_checked':
         lines.extend(['일부 기업·공고의 수집 또는 검증이 남아 있어 이번 조사는 부분 결과야.',''])
     if offer_followup and actionable:lines.append('원하는 공고만 “번호 + 지원 준비” 또는 “번호 + 새 채팅용 프롬프트”로 이어갈 수 있어.')

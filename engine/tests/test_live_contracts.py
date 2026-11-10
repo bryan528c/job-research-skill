@@ -123,7 +123,11 @@ class DurableContracts(unittest.TestCase):
         parent=self.s.row('jobs',jid)
         with self.assertRaises(EngineError):self.s.assess('p',jid,decision='recommend',reason='Planning evidence',evidence_ids=[parent['latest_observation_id']],expected_profile_revision=1,expected_content_hash=parent['content_hash'])
         children=self.s.split_campaign(rid,jid,[{'role_key':'a','title':'Role A','description':'Planning duties. Entry-level.','source_quote':'Role A: planning.'}],evidence_ref='synthetic actual extraction')
-        self.assertEqual(len(children),1);self.assertFalse(self.s.list_run_jobs(rid)[0]['fresh_application'])
+        self.assertEqual(len(children),1)
+        rows={j['id']:j for j in self.s.list_run_jobs(rid)}
+        # Roles retain their source observation time, so parent/child order is
+        # not a proxy for identity when their timestamps are equal.
+        self.assertFalse(rows[jid]['fresh_application']);self.assertTrue(rows[children[0]]['fresh_application'])
         with self.assertRaises(EngineError):self.s.split_campaign(rid,jid,[{'role_key':'x','title':'Invented','description':'Invented job','source_quote':'Not on page'}],evidence_ref='synthetic')
 
     def test_detail_upgrade_preserves_inventory_count_and_user_state(self):

@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as td:
         'source_coverage_reported':'partial','national_coverage':'unknown',
         'reopen_preserved_counts':True,'import_seconds':round(import_seconds,3),
         'total_seconds':round(time.perf_counter()-start,3),'live_network_calls':0,
-        'note':'Timing is for this container and synthetic data, not a production capacity SLA.'}
+        'note':'Timing is for this execution host and synthetic data, not a production capacity SLA.'}
     text=json.dumps(result,ensure_ascii=False,indent=2)
     if a.output:a.output.write_text(text+'\n',encoding='utf-8')
     print(text)

@@ -1,4 +1,4 @@
-# Job Research Engine — 0.3.0a2 development alpha
+# Job Research Engine — 0.3.0a3 development alpha
 
 공식 명부·공개 채용목록·상세·SQLite 작업 큐와 호스트 AI 평가를 연결하는 실제 실행 모듈이다.
 사용자는 자연어로 요청한다. Python 3.10+ 표준 라이브러리를 쓰며 별도 서버·유료 API·사용자
@@ -49,6 +49,6 @@ python tools/demo.py
 ```
 
 합성 규모/변이 검사, 실사이트, 실제 AI, 새 세션, 배포·예약은 다른 검증이다.
-[실행 기록](docs/VALIDATION.20261109.ko.md), [Sources](docs/SOURCES.ko.md),
+[11월10일 후속 실행](docs/VALIDATION.20261110.ko.md), [이전 실행 기록](docs/VALIDATION.20261109.ko.md), [Sources](docs/SOURCES.ko.md),
 [Architecture](docs/ARCHITECTURE.ko.md), [Host](docs/HOST_INTEGRATION.ko.md),
 [Acceptance](docs/ACCEPTANCE.ko.md)를 참조한다. 기존 설치본·예약 변경이나 정식 release는 하지 않는다.

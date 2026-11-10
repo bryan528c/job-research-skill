@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import http.client
 import ipaddress
+import json
+import re
 import socket
 import ssl
 import time
-from urllib.parse import urlsplit, urljoin, urlencode
+from urllib.parse import urlsplit, urljoin, urlencode,quote
 from urllib.robotparser import RobotFileParser
 from .model import EngineError, public_url
 
@@ -39,7 +41,7 @@ def retry_delay(value: str | None) -> int:
 
 
 class PublicHTTP:
-    """GET-only, no proxy/cookie reuse, public IP pinning and per-host pacing.
+    """Public reads with narrowly reviewed POST searches, no proxy/cookie reuse.
 
     Requests must be explicitly enabled by the caller. Source terms/policies must also
     be reviewed. robots.txt alone is NOT permission to ignore a site's terms.
@@ -57,18 +59,18 @@ class PublicHTTP:
             raise FetchError('private_address','DNS resolves to a non-public address')
         return addresses[0]
 
-    def _one(self,url: str,secret_query: dict[str,str] | None=None, *, form: dict | None=None) -> Response:
+    def _one(self,url: str,secret_query: dict[str,str] | None=None, *, form: dict | None=None,json_body: dict | None=None,public_tenant: str | None=None,gabia_site_info=False) -> Response:
         public_url(url);p=urlsplit(url);host=p.hostname.encode('idna').decode('ascii')
         port=p.port or (443 if p.scheme=='https' else 80);addr=self.resolve(host,port)
         wait=self.interval-(time.monotonic()-self.last.get(host,0))
         if wait>0:time.sleep(wait)
         self.last[host]=time.monotonic()
-        target=p.path or '/'
+        target=quote(p.path or '/',safe="/:@!$&'()*+,;=-._~%")
         query=p.query
         if secret_query:
             if p.scheme!='https':raise FetchError('credential_transport','credentials require HTTPS')
             query += ('&' if query else '')+urlencode(secret_query)
-        if query:target+='?'+query
+        if query:target+='?'+quote(query,safe="=&/?+:;@!$'()*,-._~%[]")
         conn=http.client.HTTPConnection(host,port,timeout=self.timeout)
         try:
             # Resolve once and connect to the checked IP. HTTPS validates the original hostname.
@@ -77,10 +79,21 @@ class PublicHTTP:
             conn.sock=sock
             headers={'Host':p.netloc,'User-Agent':USER_AGENT,'Accept-Encoding':'identity','Accept':'application/json, application/xml, text/html;q=0.8, */*;q=0.5'}
             body=None
+            if public_tenant is not None:
+                headers['prefix']=public_tenant;headers['Origin']='https://'+public_tenant
+                headers['Referer']=headers['Origin']+'/'
+            if gabia_site_info:
+                headers['x-career-site-domain']='gabia.com';headers['Origin']='https://recruit.gabia.com'
+                headers['Referer']='https://recruit.gabia.com/'
             if form is not None:
                 body=urlencode(form).encode('utf-8');headers['Content-Type']='application/x-www-form-urlencoded'
                 headers['X-Requested-With']='XMLHttpRequest';headers['Referer']='https://www.skcareers.com/Recruit'
-            conn.request('POST' if form is not None else 'GET',target,body=body,headers=headers)
+            if json_body is not None:
+                body=json.dumps(json_body,ensure_ascii=False,separators=(',',':')).encode('utf-8')
+                headers['Content-Type']='application/json'
+                headers['Origin']='https://www.hanwhain.com' if host=='hwadm.hanwhain.com' else 'https://careers.lg.com'
+                headers['Referer']=headers['Origin']+('/portal/apply/recruit' if host=='hwadm.hanwhain.com' else '/apply')
+            conn.request('POST' if form is not None or json_body is not None else 'GET',target,body=body,headers=headers)
             r=conn.getresponse();headers={k.lower():v for k,v in r.getheaders()}
             if headers.get('content-encoding','identity').lower() not in {'identity',''}:
                 raise FetchError('compressed_response','unexpected compression; no silent truncation')
@@ -137,3 +150,77 @@ class PublicHTTP:
                 self.robots_cache[origin]=parser
         parser=self.robots_cache[origin]
         return True if parser is None else parser.can_fetch('JobResearchEngine',url)
+
+    def read_json(self,url: str,fields: dict) -> Response:
+        """Observed LG/Hanwha anonymous job queries; never a generic POST client."""
+        if not self.enabled:raise FetchError('network_disabled','network access not enabled')
+        base='https://api.careers.lg.com/rmk/job/'
+        hanwha='https://hwadm.hanwhain.com/new-backend/portal/api/rcRecruit/'
+        routes={'retrieveJobNotices','retrieveJobNoticesList','retrieveJobNoticesDetail'}
+        checked=public_url(url)
+        if checked not in {base+route for route in routes}|{hanwha+'search-rcrt',hanwha+'get-rcrt'}:
+            raise FetchError('write_route_refused','only reviewed anonymous public job read routes are allowed')
+        if not isinstance(fields,dict):raise FetchError('invalid_public_query','query must be a bounded object')
+        route=checked.removeprefix(base)
+        valid=False
+        positive=lambda v:not isinstance(v,bool) and (isinstance(v,int) and 0<v<10**12 or isinstance(v,str) and re.fullmatch(r'[1-9][0-9]{0,11}',v) is not None)
+        if checked.startswith(hanwha):
+            if checked==hanwha+'get-rcrt':
+                valid=set(fields)=={'rtSeq','hidnKey','langCd'} and positive(fields.get('rtSeq')) and fields.get('hidnKey') is None and fields.get('langCd') in ('ko','en')
+            else:
+                switches={'rtNrcrtYn','rtCarrYn','rtIntnYn','rtPermanentWorkYn','rtTempWorkYn'}
+                arrays={'sdSeqList','djSeqList','rjSeqList'}
+                valid={'langCd','page','size'}.issubset(fields) and set(fields).issubset(switches|arrays|{'langCd','searchText','page','size'})
+                for key,value in fields.items():
+                    if key=='langCd':valid=valid and value in ('ko','en')
+                    elif key=='searchText':valid=valid and isinstance(value,str) and len(value)<=200
+                    elif key=='page':valid=valid and isinstance(value,int) and not isinstance(value,bool) and 0<=value<=10000
+                    elif key=='size':valid=valid and isinstance(value,int) and not isinstance(value,bool) and 1<=value<=100
+                    elif key in switches:valid=valid and value in ('','Y','N')
+                    elif key in arrays:valid=valid and (value is None or isinstance(value,list) and len(value)<=100 and all(positive(v) for v in value))
+        elif route=='retrieveJobNotices':valid=not fields
+        elif route=='retrieveJobNoticesDetail':
+            value=fields.get('jobNoticeId')
+            valid=set(fields)=={'jobNoticeId'} and not isinstance(value,bool) and (
+                isinstance(value,int) and 0<value<10**12 or
+                isinstance(value,str) and re.fullmatch(r'[1-9][0-9]{0,11}',value) is not None)
+        else:
+            strings={'lnbSearch','hashTagText'};arrays={'careerList','companyCodeList','desireLocList','jobGroupList'}
+            valid=set(fields).issubset(strings|arrays|{'recDate','order'})
+            for key,value in fields.items():
+                if key in strings:valid=valid and isinstance(value,str) and len(value)<=200
+                elif key in arrays:valid=valid and isinstance(value,list) and len(value)<=100 and all(isinstance(v,str) and len(v)<=80 for v in value)
+                elif key=='recDate':valid=valid and isinstance(value,str) and value in {'POST_START_DATE','POST_END_DATE'}
+                elif key=='order':valid=valid and isinstance(value,str) and value in {'ASC','DESC'}
+        if not valid:raise FetchError('invalid_public_query','only observed bounded job filters accepted')
+        response=self._one(checked,json_body=fields)
+        if response.status==429:raise FetchError('rate_limited','source requested backoff',retry_delay(response.headers.get('retry-after')))
+        if response.status>=500:raise FetchError('upstream_error','source unavailable',60)
+        if response.status!=200:raise FetchError('http_'+str(response.status),'public job query unavailable; redirects not followed')
+        return response
+
+    def get_jobflex(self,url: str,prefix: str) -> Response:
+        """Exact public Jobflex detail GET with its nonsecret UI tenant selector."""
+        if not self.enabled:raise FetchError('network_disabled','network access not enabled')
+        if not re.fullmatch(r'https://api-recruiter\.recruiter\.co\.kr/position/v2/jobflex/[1-9][0-9]{0,11}',public_url(url)):
+            raise FetchError('write_route_refused','only reviewed public Jobflex position detail route allowed')
+        if not isinstance(prefix,str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.recruiter\.co\.kr',prefix):
+            raise FetchError('invalid_public_tenant','observed public recruiter tenant hostname required')
+        response=self._one(url,public_tenant=prefix)
+        if response.status==429:raise FetchError('rate_limited','source requested backoff',retry_delay(response.headers.get('retry-after')))
+        if response.status>=500:raise FetchError('upstream_error','source unavailable',60)
+        if response.status!=200:raise FetchError('http_'+str(response.status),'public Jobflex detail unavailable; redirects not followed')
+        return response
+
+    def get_gabia(self,url: str) -> Response:
+        """Observed anonymous Gabia site-info/list/detail GETs, without applicant APIs."""
+        if not self.enabled:raise FetchError('network_disabled','network access not enabled')
+        base='https://recruit-api.gabiaoffice.hiworks.com/v1/career-site/'
+        checked=public_url(url);info=checked==base+'tokens/site-information'
+        if not info and not re.fullmatch(re.escape(base)+r'offices/[1-9][0-9]{0,8}/announces(?:/[a-z0-9]{6})?',checked):
+            raise FetchError('write_route_refused','only reviewed anonymous Gabia career reads allowed')
+        response=self._one(checked,gabia_site_info=True) if info else self._one(checked)
+        if response.status==429:raise FetchError('rate_limited','source requested backoff',retry_delay(response.headers.get('retry-after')))
+        if response.status>=500:raise FetchError('upstream_error','source unavailable',60)
+        if response.status!=200:raise FetchError('http_'+str(response.status),'public Gabia read unavailable; redirects not followed')
+        return response

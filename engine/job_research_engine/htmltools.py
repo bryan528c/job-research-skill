@@ -34,7 +34,7 @@ class Node:
 class Tree(HTMLParser):
     def __init__(self, text):
         super().__init__(convert_charrefs=True)
-        self.root=Node('document');self.stack=[self.root];self.feed(text)
+        self.root=Node('document');self.stack=[self.root];self.feed(text);self.close()
 
     def handle_starttag(self, tag, attrs):
         node=Node(tag,dict(attrs));self.stack[-1].children.append(node)

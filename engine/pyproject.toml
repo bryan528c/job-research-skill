@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "job-research-engine"
-version = "0.3.0a2"
+version = "0.3.0a3"
 description = "Durable source collection, work queues and evidence-linked job research"
 requires-python = ">=3.10"
 license = {text = "MIT"}

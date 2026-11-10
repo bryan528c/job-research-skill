@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from .htmltools import html
 from .model import EngineError, digest, dump, public_url, stable_id
-from .registry import krx_html_rows, safe_xml
+from .registry import krx_html_rows, safe_xml, normalize_stock_code
 from .transport import PublicHTTP, FetchError
 
 PROVIDERS = {
@@ -84,7 +84,7 @@ def dart_web_rows(payload):
         # The export does not include corp_code. Keep unresolved rows as independent records.
         identity='legal:'+legal if legal else 'business:'+biz if biz else 'unresolved:'+digest(dump(r))
         facts={'legal_registration':legal,'business_registration':biz,
-               'stock_code':digits(r.get('종목코드'),6),'listed_market':r.get('법인구분'),
+               'stock_code':normalize_stock_code(r.get('종목코드')),'listed_market':r.get('법인구분'),
                'identity_unresolved':not bool(legal or biz),'source_company_name':r.get('공시회사명'),
                'homepage_source_text':r.get('홈페이지'),
                'homepage_unusable':bool(r.get('홈페이지')) and homepage(r.get('홈페이지')) is None}
@@ -180,6 +180,12 @@ def sync_registry(store, provider, *, year=None, transport=None, budget_seconds=
     else:origin='native_registry'
     session=store.db.execute("SELECT * FROM registry_syncs WHERE provider=? AND year=? AND status IN ('running','blocked') ORDER BY created_at DESC LIMIT 1",(provider,year)).fetchone()
     if restart:session=None
+    if session and provider in {'krx','dart-web'} and session['next_page']!=1:
+        # A crash after saving the sole export must not append a second full file
+        # as page 2. Retain that acquisition and restart a separately scoped snapshot.
+        store.db.execute("UPDATE registry_syncs SET status='invalid',error=? WHERE id=?",
+            ('single-export finalization interrupted; raw retained, restarting separate snapshot',session['id']))
+        session=None
     if session:
         session=dict(session);sid=session['id'];page=session['next_page']
     else:

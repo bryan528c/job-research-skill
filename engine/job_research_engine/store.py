@@ -95,6 +95,9 @@ CREATE TABLE IF NOT EXISTS assessments(
  risk TEXT NOT NULL, unknowns_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
  created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS assessments_latest ON assessments(profile_id,job_id,created_at);
+CREATE TABLE IF NOT EXISTS assessment_reporting(
+ assessment_id TEXT PRIMARY KEY REFERENCES assessments(id), report_tier TEXT NOT NULL
+ CHECK(report_tier IN ('actionable','source_gap','future_pool')));
 CREATE TABLE IF NOT EXISTS user_events(
  id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id),
  event_key TEXT NOT NULL, scope_type TEXT NOT NULL, target_id TEXT NOT NULL,
@@ -534,10 +537,15 @@ class Store:
 
     def _observe(self, task: dict, source_url: str, payload: bytes, *, media_type: str,
                  origin: str, tool_ref: str | None, observed_at: str | None) -> str:
-        public_url(source_url)
-        if origin not in {"native_http", "host_export", "fixture"}:
+        if origin=='private_record':
+            legacy_id=json.loads(task['payload_json']).get('legacy_id')
+            owner=self.db.execute('SELECT profile_id FROM legacy_records WHERE id=?',(legacy_id,)).fetchone()
+            if task['kind']!='legacy_recheck' or source_url!='urn:job-research:legacy:'+str(legacy_id) or not owner or owner[0]!=self.row('runs',task['run_id'])['profile_id']:
+                raise EngineError('private evidence must reference this profile legacy record')
+        else:public_url(source_url)
+        if origin not in {"native_http", "host_export", "fixture", "private_record"}:
             raise EngineError("invalid evidence origin")
-        if origin == "host_export" and not tool_ref:
+        if origin in {"host_export","private_record"} and not tool_ref:
             raise EngineError("host export requires an actual observation reference")
         at = canonical_time(observed_at or self._now())
         if timestamp(at) > timestamp(self._now()) + timedelta(minutes=5):
@@ -607,7 +615,7 @@ class Store:
                     self.db.execute("INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)", (task["run_id"],jid))
                     continue
                 self.db.execute("""INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT(id) DO UPDATE SET employer=excluded.employer,title=excluded.title,
+                    ON CONFLICT(id) DO UPDATE SET company_id=excluded.company_id,employer=excluded.employer,title=excluded.title,
                     job_url=excluded.job_url,apply_url=excluded.apply_url,content_json=excluded.content_json,
                     content_hash=excluded.content_hash,recruiting_status=excluded.recruiting_status,
                     detail_verified=excluded.detail_verified,last_seen=excluded.last_seen,
@@ -632,7 +640,8 @@ class Store:
             reason = None
             if len(prior_totals) > 1:
                 reason = "inventory_changed_during_pagination"
-            if page.terminal and page.expected_total is not None and observed_count != page.expected_total:
+            declared_total=next(iter(prior_totals)) if len(prior_totals)==1 else page.expected_total
+            if page.terminal and declared_total is not None and observed_count != declared_total:
                 reason = "inventory_total_mismatch"
             if page.terminal and not page.inventory_complete:
                 reason = "source_inventory_not_exhausted"
@@ -642,7 +651,7 @@ class Store:
                     (reason,page.scope_note,task_id))
             elif page.terminal:
                 state = "done"
-                self.db.execute("UPDATE tasks SET status='done',finished_at=?,lease_token=NULL,lease_until=NULL WHERE id=?", (at,task_id))
+                self.db.execute("UPDATE tasks SET status='done',finished_at=?,lease_token=NULL,lease_until=NULL WHERE id=?", (self._now(),task_id))
                 self.db.execute("UPDATE run_sources SET completed=1 WHERE run_id=? AND source_id=?", (task["run_id"],source["id"]))
                 self.db.execute("UPDATE sources SET last_complete_at=?,last_attempt_at=? WHERE id=?", (at,at,source["id"]))
                 # Absence creates a review task, never closes a job or erases a recommendation.
@@ -663,7 +672,7 @@ class Store:
         return {"observation_id":oid,"job_ids":inserted,"task_status":state,"gap":reason}
 
     def commit_detail(self,task_id: str,token: str,job: Job,*,source_url: str,payload: bytes,
-                      origin='native_http',tool_ref=None,media_type='text/html') -> dict:
+                      origin='native_http',tool_ref=None,media_type='text/html',observed_at=None) -> dict:
         """Update an individual detail without disturbing the inventory cursor or total."""
         job.validate()
         with self.transaction():
@@ -675,23 +684,73 @@ class Store:
                 jid=request['job_id'];previous=self.row('jobs',jid)
                 if previous['external_id']!=job.external_id or previous['round_key']!=job.round_key:
                     raise EngineError('detail belongs to a different job/round')
-            oid=self._observe(task,source_url,payload,media_type=media_type,origin=origin,tool_ref=tool_ref,observed_at=None)
-            at=self._now();encoded=dump(job.content());chash=digest(encoded)
+                if task['kind']=='image_review' and request.get('expected_content_hash') and request['expected_content_hash']!=previous['content_hash']:
+                    raise LeaseLost('image input changed; previous review cannot overwrite the current job')
+            if task['kind']=='image_review' and not job.detail_verified:
+                raise EngineError('image review needs an observed transcription; block unreadable input instead')
+            oid=self._observe(task,source_url,payload,media_type=media_type,origin=origin,tool_ref=tool_ref,observed_at=observed_at)
+            at=self.row('observations',oid)['observed_at'];encoded=dump(job.content());chash=digest(encoded)
+            previous=self.db.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone()
+            if previous and at<previous['last_seen']:
+                current_observation=self.row('observations',previous['latest_observation_id'])
+                if current_observation['sha256']!=digest(payload) or current_observation['source_url']!=source_url:
+                    self.db.execute("UPDATE tasks SET status='blocked',error_code='stale_detail_observation',error_note='Older capture retained without replacing newer job facts',lease_token=NULL,lease_until=NULL WHERE id=?",(task_id,))
+                    self._log('task',task_id,'stale_detail_retained',{'observation':oid})
+                    return {'observation_id':oid,'job_id':jid,'detail_verified':bool(previous['detail_verified']),'stale_ignored':True}
+                # Reinterpreting identical bytes may enrich metadata, but cannot
+                # rewind freshness or replace the newer source observation.
+                self._log('task',task_id,'equivalent_old_capture_reinterpreted',{'retained_capture':oid,'newer_source':current_observation['id']})
+                oid=current_observation['id'];at=previous['last_seen']
             company_id=source['company_id'] or self._catalog_employer(source,job.employer,task['run_id'],oid)
             self.db.execute('''INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET employer=excluded.employer,title=excluded.title,
+                ON CONFLICT(id) DO UPDATE SET company_id=excluded.company_id,employer=excluded.employer,title=excluded.title,
                 job_url=excluded.job_url,apply_url=excluded.apply_url,content_json=excluded.content_json,
                 content_hash=excluded.content_hash,recruiting_status=excluded.recruiting_status,
-                detail_verified=excluded.detail_verified,last_seen=excluded.last_seen,latest_observation_id=excluded.latest_observation_id''',
+                detail_verified=excluded.detail_verified,first_seen=MIN(jobs.first_seen,excluded.first_seen),last_seen=excluded.last_seen,latest_observation_id=excluded.latest_observation_id''',
                 (jid,source['id'],job.external_id,job.round_key,company_id,job.employer,job.title,job.job_url,
                  job.apply_url,encoded,chash,job.status,int(job.detail_verified),at,at,oid))
             self.db.execute('INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)',(jid,chash,oid,at,encoded))
             self.db.execute('INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)',(task['run_id'],jid,task_id,oid))
             self.db.execute('INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)',(task['run_id'],jid))
+            if job.status=='closed':
+                # A source may remove its description after closing a campaign.
+                # The explicit closure still governs its exact existing roles;
+                # preserve their duties/decisions instead of requiring re-splitting.
+                children=self.db.execute('''SELECT j.* FROM job_links l JOIN jobs j ON j.id=l.right_id
+                    WHERE l.left_id=? AND l.relation='role_child' AND j.source_id=? AND j.round_key=?''',
+                    (jid,source['id'],job.round_key)).fetchall()
+                for child in children:
+                    if at<child['last_seen'] or not child['external_id'].startswith(job.external_id+':role:'):continue
+                    content=json.loads(child['content_json']);content.update(status='closed',apply_url=job.apply_url)
+                    child_encoded=dump(content);child_hash=digest(child_encoded)
+                    self.db.execute('''UPDATE jobs SET recruiting_status='closed',apply_url=?,content_json=?,
+                        content_hash=?,last_seen=?,latest_observation_id=? WHERE id=?''',
+                        (job.apply_url,child_encoded,child_hash,at,oid,child['id']))
+                    self.db.execute('INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)',(child['id'],child_hash,oid,at,child_encoded))
+                    self._log('job',child['id'],'official_parent_closed',{'parent':jid,'observation':oid})
             if not job.detail_verified:
-                self._enqueue(task['run_id'],'image_review',jid,source_id=source['id'],company_id=source['company_id'],
-                              payload={'job_id':jid,'media_urls':job.raw.get('media_urls',[])},priority=20)
-            self.db.execute("UPDATE tasks SET status='done',finished_at=?,lease_token=NULL,lease_until=NULL WHERE id=?",(at,task_id))
+                review={'job_id':jid,'media_urls':job.raw.get('media_urls',[]),
+                        'embedded_image_count':job.raw.get('embedded_image_count',0),
+                        'expected_content_hash':chash,'review_input_sha256':digest(payload)}
+                tid=self._enqueue(task['run_id'],'image_review',jid,source_id=source['id'],company_id=source['company_id'],payload=review,priority=20)
+                existing=self.row('tasks',tid);old_review=json.loads(existing['payload_json'])
+                changed=old_review.get('expected_content_hash')!=chash or old_review.get('review_input_sha256')!=review['review_input_sha256']
+                if existing['status']=='leased' and changed:
+                    self.db.execute("UPDATE tasks SET status='queued',payload_json=?,not_before=?,finished_at=NULL,lease_token=NULL,lease_until=NULL,error_code=NULL,error_note=NULL WHERE id=?",(dump(review),at,tid))
+                    self._log('task',tid,'image_input_superseded',{'new_observation':oid,'prior_content_hash':old_review.get('expected_content_hash')})
+                elif existing['status']=='done' or existing['status'] in {'blocked','superseded'} and changed:
+                    self.db.execute("UPDATE tasks SET status='queued',payload_json=?,not_before=?,finished_at=NULL,error_code=NULL,error_note=NULL WHERE id=?",(dump(review),at,tid))
+                    self._log('task',tid,'image_review_reopened',{'new_observation':oid})
+                elif existing['status']=='queued':
+                    self.db.execute('UPDATE tasks SET payload_json=? WHERE id=?',(dump(review),tid))
+            else:
+                obsolete=self.db.execute("""SELECT id FROM tasks WHERE run_id=? AND kind='image_review'
+                    AND id!=? AND status IN ('queued','blocked','deferred','leased')
+                    AND json_extract(payload_json,'$.job_id')=?""",(task['run_id'],task_id,jid)).fetchall()
+                for old_review in obsolete:
+                    self.db.execute("UPDATE tasks SET status='superseded',lease_token=NULL,lease_until=NULL,finished_at=? WHERE id=?",(self._now(),old_review['id']))
+                    self._log('task',old_review['id'],'verified_detail_superseded_image_input',{'observation':oid,'job_id':jid})
+            self.db.execute("UPDATE tasks SET status='done',finished_at=?,lease_token=NULL,lease_until=NULL WHERE id=?",(self._now(),task_id))
             self._log('job',jid,'detail_committed',{'observation':oid,'origin':origin,'detail_verified':job.detail_verified})
         return {'observation_id':oid,'job_id':jid,'detail_verified':job.detail_verified}
 
@@ -710,14 +769,27 @@ class Store:
                 quote=required(role.get('source_quote'),'verbatim role identity/section quote')
                 if quote not in content['description']:raise EngineError('role extraction not grounded in observed campaign text')
                 external=parent['external_id']+':role:'+key;jid=stable_id(parent['source_id'],external,parent['round_key'])
-                child={**content,'external_id':external,'title':title,'description':description,'requires_role_split':False,'parent_content_hash':parent['content_hash']}
-                encoded=dump(child);chash=digest(encoded);at=self._now();oid=parent['latest_observation_id']
+                employer=role.get('employer') or parent['employer']
+                if role.get('employer') and employer not in content['description']:
+                    raise EngineError('individual employer must appear in the observed campaign')
+                company_id=parent['company_id']
+                if employer!=parent['employer']:
+                    company_id=self._catalog_employer(self.row('sources',parent['source_id']),employer,run_id,parent['latest_observation_id'])
+                child={**content,'external_id':external,'title':title,'employer':employer,'description':description,
+                       'campaign_title':parent['title'],'requires_role_split':False,'parent_content_hash':parent['content_hash']}
+                if role.get('location'):child['location']=role['location']
+                status=role.get('recruiting_status',parent['recruiting_status'])
+                if status not in {'open','closed','unknown'}:raise EngineError('invalid observed role recruiting status')
+                child['status']=status
+                encoded=dump(child);chash=digest(encoded);at=parent['last_seen'];oid=parent['latest_observation_id']
                 self.db.execute('''INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT(id) DO UPDATE SET content_json=excluded.content_json,content_hash=excluded.content_hash,
-                    title=excluded.title,recruiting_status=excluded.recruiting_status,last_seen=excluded.last_seen,
+                    ON CONFLICT(id) DO UPDATE SET company_id=excluded.company_id,employer=excluded.employer,
+                    job_url=excluded.job_url,apply_url=excluded.apply_url,
+                    content_json=excluded.content_json,content_hash=excluded.content_hash,
+                    title=excluded.title,recruiting_status=excluded.recruiting_status,first_seen=MIN(jobs.first_seen,excluded.first_seen),last_seen=excluded.last_seen,
                     latest_observation_id=excluded.latest_observation_id''',
-                    (jid,parent['source_id'],external,parent['round_key'],parent['company_id'],parent['employer'],title,
-                     parent['job_url'],parent['apply_url'],encoded,chash,parent['recruiting_status'],1,at,at,oid))
+                    (jid,parent['source_id'],external,parent['round_key'],company_id,employer,title,
+                     parent['job_url'],parent['apply_url'],encoded,chash,status,1,at,at,oid))
                 self.db.execute('INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)',(jid,chash,oid,at,encoded))
                 self.db.execute('INSERT OR IGNORE INTO run_jobs VALUES(?,?,0)',(run_id,jid))
                 task=self.db.execute('SELECT task_id FROM observations WHERE id=?',(oid,)).fetchone()[0]
@@ -726,15 +798,26 @@ class Store:
                 self._log('job',jid,'role_extracted',{'parent':parent_id,'quote':quote,'evidence':evidence_ref});result.append(jid)
         return result
 
-    def complete_host_task(self, task_id: str, token: str, *, evidence_url: str,
+    def complete_host_task(self, task_id: str, token: str, *, evidence_url: str | None,
                            evidence_text: str, tool_ref: str, outcome: dict) -> str:
         """Bridge from an authorized browser/LLM. Evidence is labelled host_export, not authenticated."""
         with self.transaction():
             task = self._check_lease(task_id,token)
             if task["kind"] == "inventory":
                 raise EngineError("inventory requires parsed pages, not a completion sentence")
+            origin='host_export'
+            if evidence_url is None:
+                if task['kind']!='legacy_recheck' or outcome.get('disposition')!='scoped_user_decline':
+                    raise EngineError('only a scoped historical user decision may use private record evidence')
+                legacy_id=json.loads(task['payload_json'])['legacy_id']
+                legacy=self.db.execute('SELECT * FROM legacy_records WHERE id=?',(legacy_id,)).fetchone()
+                quote=required(outcome.get('source_quote'),'exact imported decision provenance quote')
+                record=json.loads(legacy['payload_json'])
+                if quote not in str(record.get('provenance','')) and quote not in str(record.get('user_statement','')):
+                    raise EngineError('private decision quote not found in preserved source record')
+                evidence_url='urn:job-research:legacy:'+legacy_id;origin='private_record'
             oid = self._observe(task,evidence_url,evidence_text.encode(),media_type="text/plain",
-                                origin="host_export",tool_ref=tool_ref,observed_at=None)
+                                origin=origin,tool_ref=tool_ref,observed_at=None)
             if task["kind"] == "source_discovery":
                 src = self.row("sources",required(outcome.get("source_id"),"registered source"))
                 if src["company_id"] != task["company_id"]:
@@ -782,9 +865,12 @@ class Store:
 
     def assess(self, profile_id: str, job_id: str, *, decision: str, reason: str,
                evidence_ids: list[str], expected_profile_revision: int, expected_content_hash: str,
-               risk: str = "", blocking_unknowns: list[str] | None = None) -> str:
+               risk: str = "", blocking_unknowns: list[str] | None = None,
+               report_tier: str = 'actionable') -> str:
         if decision not in {"recommend", "check", "exclude"}:
             raise EngineError("decision must be recommend/check/exclude")
+        if report_tier not in {'actionable','source_gap','future_pool'} or decision!='check' and report_tier!='actionable':
+            raise EngineError('only check decisions may retain non-actionable source gaps or future pools')
         required(reason,"assessment reason")
         if not evidence_ids:
             raise EngineError("assessment requires observed evidence")
@@ -803,6 +889,7 @@ class Store:
             self.db.execute("INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (aid,profile_id,profile["revision"],job_id,job["content_hash"],decision,reason,risk,
                  dump(unknowns),dump(evidence_ids),self._now()))
+            if report_tier!='actionable':self.db.execute('INSERT INTO assessment_reporting VALUES(?,?)',(aid,report_tier))
             self._log("assessment",aid,"created",{"job_id":job_id,"decision":decision})
         return aid
 
@@ -856,6 +943,7 @@ class Store:
             state=self.latest_user_state(run["profile_id"],job)
             seen=self.db.execute("SELECT 1 FROM job_sightings WHERE run_id=? AND job_id=?",(run_id,job["id"])).fetchone() is not None
             current=bool(assessment and assessment["profile_revision"]==profile["revision"] and assessment["content_hash"]==job["content_hash"])
+            tier=self.db.execute('SELECT report_tier FROM assessment_reporting WHERE assessment_id=?',(assessment['id'],)).fetchone() if assessment else None
             content=json.loads(job['content_json'])
             parent=self.db.execute("SELECT j.content_hash FROM job_links l JOIN jobs j ON j.id=l.left_id WHERE l.right_id=? AND l.relation='role_child'",(job['id'],)).fetchone()
             if parent and content.get('parent_content_hash')!=parent[0]:current=False
@@ -866,9 +954,20 @@ class Store:
             if effective=="recommend" and not seen:
                 effective="check"
             job.update(content=json.loads(job["content_json"]),assessment=dict(assessment) if assessment else None,
+                       report_tier=tier[0] if tier else 'actionable',
                        assessment_current=current,user_state=state,seen_this_run=seen,effective_decision=effective)
             job["fresh_application"] = state["decision"]!="declined" and state["application"] in {"not_started","draft","written"}
-            if job['content'].get('requires_role_split'):
+            job['decomposed_campaign']=bool(self.db.execute("SELECT 1 FROM job_links WHERE left_id=? AND relation='role_child' LIMIT 1",(job['id'],)).fetchone())
+            job['equivalent_decomposition']=bool(self.db.execute('''SELECT 1 FROM job_links l JOIN jobs other
+                ON other.id=CASE WHEN l.left_id=? THEN l.right_id ELSE l.left_id END
+                WHERE l.relation='same_posting' AND (l.left_id=? OR l.right_id=?) AND other.content_hash=?
+                AND EXISTS (SELECT 1 FROM job_links c JOIN jobs child ON child.id=c.right_id
+                    WHERE c.left_id=other.id AND c.relation='role_child'
+                    AND json_extract(child.content_json,'$.parent_content_hash')=other.content_hash) LIMIT 1''',
+                (job['id'],job['id'],job['id'],job['content_hash'])).fetchone())
+            from .report import past_deadline
+            job['deadline_elapsed']=past_deadline(content['deadline'],self._now(),json.loads(profile['facts_json']).get('timezone','UTC'))
+            if job['recruiting_status']=='closed' or job['content'].get('requires_role_split') or job['decomposed_campaign'] or job['equivalent_decomposition'] or job['deadline_elapsed']:
                 job['fresh_application']=False
             result.append(job)
         return result
@@ -931,7 +1030,7 @@ class Store:
                 gaps.append({"type":"counter_search_followthrough","ids":sorted(missing)})
         jobs=self.list_run_jobs(run_id)
         for job in jobs:
-            if job['content'].get('requires_role_split') and not self.db.execute("SELECT 1 FROM job_links WHERE left_id=? AND relation='role_child'",(job['id'],)).fetchone():
+            if job['content'].get('requires_role_split') and not job['decomposed_campaign'] and not job['equivalent_decomposition']:
                 gaps.append({'type':'campaign_roles_not_split','id':job['id']})
             if job["recruiting_status"]=="closed" or not job["fresh_application"]:
                 continue
@@ -949,7 +1048,7 @@ class Store:
                 WHERE rs.run_id=? AND s.company_id=?""",(run_id,cid)).fetchall()
             if rows and all(r[0] for r in rows):covered_company.add(cid)
         production=self.db.execute("""SELECT COUNT(*) FROM observations o JOIN tasks t ON t.id=o.task_id
-            WHERE t.run_id=? AND o.origin!='fixture'""",(run_id,)).fetchone()[0]
+            WHERE t.run_id=? AND o.origin IN ('native_http','host_export')""",(run_id,)).fetchone()[0]
         return {"run_id":run_id,"scope":run["scope"],"scope_note":run["scope_note"],
                 "status":"scope_checked" if not errors and not gaps else "partial",
                 "companies_planned":len(plan),"companies_registered_sources_checked":len(covered_company),
@@ -979,11 +1078,15 @@ class Store:
 
     def save_report(self, run_id: str, body: str, mapping: list[dict], audit: dict) -> str:
         run=self.row("runs",run_id)
-        expected={j["id"] for j in self.list_run_jobs(run_id) if j["fresh_application"] and
-                  j["recruiting_status"]!="closed" and j["effective_decision"] in {"recommend","check"}}
+        rows=self.list_run_jobs(run_id)
+        expected={j["id"] for j in rows if j["fresh_application"] and
+                  j["recruiting_status"]!="closed" and j["effective_decision"] in {"recommend","check"} and j['report_tier']=='actionable'}
         shown={m["job_id"] for m in mapping}
         if expected != shown:
             raise EngineError("report reconciliation failed: worthwhile jobs lost or invented")
+        gaps={j['id'] for j in rows if j['effective_decision']=='check' and j['report_tier']!='actionable'}
+        retained={j['job_id'] for j in audit.get('retained_non_actionable_checks',[])}
+        if gaps!=retained:raise EngineError('report reconciliation failed: retained source gaps or pools lost or invented')
         rid=uuid.uuid4().hex
         self.db.execute("INSERT INTO reports VALUES(?,?,?,?,?,?,?)",
             (rid,run_id,run["profile_id"],self._now(),body,dump(mapping),dump(audit)))

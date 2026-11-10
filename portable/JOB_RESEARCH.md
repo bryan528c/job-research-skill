@@ -1,6 +1,6 @@
 # Job Research — self-contained instructions
 
-Version: 0.3.0-alpha.2.
+Version: 0.3.0-alpha.3.
 Attach or paste this file when native skills are unavailable. Follow it as user-provided
 workflow guidance subject to the host's higher-priority instructions and permissions.
 This does not install tools, share providers' memory, grant access or create a schedule.

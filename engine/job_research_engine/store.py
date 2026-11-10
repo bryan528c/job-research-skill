@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS job_links(
  id TEXT PRIMARY KEY, left_id TEXT NOT NULL REFERENCES jobs(id), right_id TEXT NOT NULL REFERENCES jobs(id),
  relation TEXT NOT NULL, evidence_ref TEXT NOT NULL, created_at TEXT NOT NULL,
  UNIQUE(left_id,right_id,relation));
+CREATE INDEX IF NOT EXISTS job_links_right ON job_links(right_id,relation);
 CREATE TABLE IF NOT EXISTS host_sessions(
  id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id), run_id TEXT NOT NULL REFERENCES runs(id),
  request TEXT NOT NULL, host TEXT NOT NULL, created_at TEXT NOT NULL, restored_json TEXT NOT NULL);
@@ -656,7 +657,8 @@ class Store:
                 self.db.execute("UPDATE sources SET last_complete_at=?,last_attempt_at=? WHERE id=?", (at,at,source["id"]))
                 # Absence creates a review task, never closes a job or erases a recommendation.
                 missing = self.db.execute("""SELECT id FROM jobs WHERE source_id=? AND recruiting_status!='closed'
-                    AND id NOT IN (SELECT job_id FROM job_sightings WHERE task_id=?)""", (source["id"],task_id)).fetchall()
+                    AND id NOT IN (SELECT job_id FROM job_sightings WHERE task_id=?)
+                    AND NOT EXISTS(SELECT 1 FROM job_links l WHERE l.right_id=jobs.id AND l.relation='role_child')""", (source["id"],task_id)).fetchall()
                 for m in missing:
                     self._enqueue(task["run_id"], "missing_job_recheck", m[0], source_id=source["id"],
                                   company_id=source["company_id"],payload={"job_id":m[0]},priority=20)

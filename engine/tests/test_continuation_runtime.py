@@ -15,6 +15,32 @@ from job_research_engine.htmltools import html
 from job_research_engine.adapters import plain
 from job_research_engine.worker import collect
 
+class DerivedRoleInventory(unittest.TestCase):
+    def check_repeat(self,present):
+        with Store(':memory:') as s:
+            s.set_profile('p',{})
+            s.import_companies('fixture',[{'external_id':'1','name':'Universe'}],source_url='https://registry.example/a',scope='fixture',raw_sha256='a'*64,provenance='fixture')
+            source=s.add_source('host-json','https://jobs.example/list',company_id=None,evidence_ref='synthetic',policy='host_only')
+            first=s.plan_run('p',scope_note='fixture');task=s.claim(first)
+            parent=Job('1','Campaign','Synthetic','https://jobs.example/1',description='Role A: actual duties and common requirements',detail_verified=True,requires_role_split=True)
+            jid=s.commit_page(task['id'],task['lease_token'],Page([parent],True,expected_total=1),source_url='https://jobs.example/list',payload=b'first fixture',origin='fixture')['job_ids'][0]
+            child=s.split_campaign(first,jid,[{'role_key':'a','title':'Role A','description':'Actual duties and common requirements','source_quote':'Role A:'}],evidence_ref='synthetic observed section')[0]
+            s.user_event('p',event_key='decline',scope_type='job',target_id=child,kind='decision',value='declined',evidence_ref='synthetic explicit decision')
+            repeat=s.plan_run('p',scope_note='repeat fixture');task=s.claim(repeat)
+            jobs=[parent] if present else []
+            s.commit_page(task['id'],task['lease_token'],Page(jobs,True,expected_total=len(jobs)),source_url='https://jobs.example/list',payload=b'repeat fixture',origin='fixture')
+            missing=[json.loads(r[0])['job_id'] for r in s.db.execute("SELECT payload_json FROM tasks WHERE run_id=? AND kind='missing_job_recheck'",(repeat,))]
+            self.assertEqual(set(missing),set() if present else {jid})
+            self.assertEqual(s.row('jobs',child)['recruiting_status'],'open')
+            self.assertEqual(s.latest_user_state('p',s.row('jobs',child))['decision'],'declined')
+
+    def test_listed_campaign_does_not_create_false_absence_for_derived_role(self):
+        self.check_repeat(True)
+
+    def test_absent_campaign_reviews_parent_without_falsely_closing_derived_role(self):
+        self.check_repeat(False)
+
+
 class PublicJobReads(unittest.TestCase):
     def test_korean_poster_wire_url_encodes_unicode_without_double_encoding_observed_escapes(self):
         t=PublicHTTP(enabled=True);t.interval=0

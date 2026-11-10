@@ -3,9 +3,9 @@
   "kind": "packaging_checks_not_runtime_validation",
   "canonical_skill_sha256": "00fd6fbdb9e2929a449b640b012b3589e3706d233ed3e4695584f94e101e7288",
   "artifacts": {
-    "job-research-claude.zip": "97379cea0b774fde0e2b1853393cb4a8c039ac50e20b7438152312bdd6347c33",
-    "job-research-openai-plugin.zip": "d77cbf702c0ef4e37d0672a7670e69cd57417cc763929baf94ea127ebaf70019",
-    "job-research-upload-root.zip": "771fe2f7c33555248f994c1a9cba6b694a9384e7aacdbc4a8befa287b4887ad1"
+    "job-research-claude.zip": "11044e771890fe4786eb89d08759a5ab74e2d95df62e5cfca9a3d2696be72462",
+    "job-research-openai-plugin.zip": "a5354f67b75fbd07a08334fc7eb0b4a01955db05f187ea433891e80c09f4fa2a",
+    "job-research-upload-root.zip": "d15456fd7aef36811e87311554e21328ade287fd6425aeb90ff8f58cc3373144"
   },
   "portable_sha256": "600709c12f6823eb11fba1095c4c36e7b0290c8b4f17ba20f38de5167d47d672",
   "payload": {
@@ -40,7 +40,7 @@
     "scripts/runtime/job_research_engine/model.py": "0a38345c187e13075c2b632875c5aee6223ffeb0bd1d857fe331e9dc24447a4f",
     "scripts/runtime/job_research_engine/registries.py": "ea6a542eca839558b1248f79bb0fe53da4c831d80400ac249f91a51b7ea053fc",
     "scripts/runtime/job_research_engine/registry.py": "5261006a7d49b0144467f3119fbad11d59b741bd6cea56d279a057deefc73d9b",
-    "scripts/runtime/job_research_engine/report.py": "eaf8e043599d7ff0803d0f53a47fd27e7cbb599f989264adec15d5f9e5dffe0b",
+    "scripts/runtime/job_research_engine/report.py": "fe91fd42fe51bbb7b699f3ee170ff2a3afa729db1db0ae962746d7fe8c581117",
     "scripts/runtime/job_research_engine/runtime.py": "d0502b6ee143fc5a8deb3e2fb61a13323273f0d867d26e3c69735f033d887557",
     "scripts/runtime/job_research_engine/store.py": "088e3199dcd58209f9f708d847a157fda65f5f34f747b8e687d6b9415982b2b2",
     "scripts/runtime/job_research_engine/transport.py": "09979388fa3b5a8b140b2fac514bda6684f9400a2696b7978373113d9696bb9a",

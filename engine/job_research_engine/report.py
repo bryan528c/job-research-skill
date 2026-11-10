@@ -22,7 +22,9 @@ def deadline_label(d: dict) -> str:
     if kind=='datetime':
         dt=timestamp(d['at'])
         original=datetime.fromisoformat(d['at'].replace('Z','+00:00'))
-        return original.strftime('%Y-%m-%d %H:%M %z')
+        clock=original.strftime('%H:%M:%S' if original.second or original.microsecond else '%H:%M')
+        if original.microsecond:clock+='.'+f'{original.microsecond:06d}'.rstrip('0')
+        return original.strftime('%Y-%m-%d ')+clock+original.strftime(' %z')
     if kind=='date':return d['date']+' · 마감 시각 미기재'
     return '상시채용' if kind=='rolling' else '마감 미확인'
 

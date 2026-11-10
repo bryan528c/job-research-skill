@@ -1,10 +1,16 @@
 import unittest
 from job_research_engine.store import Store
 from job_research_engine.model import EngineError,Job,Page
-from job_research_engine.report import render
+from job_research_engine.report import render,deadline_label
 from job_research_engine.runtime import state_signature
 
 class ReportTiers(unittest.TestCase):
+    def test_actual_deadline_seconds_survive_report_without_inventing_date_only_time(self):
+        self.assertEqual(deadline_label({'kind':'datetime','at':'2030-04-06T23:59:59+09:00'}),'2030-04-06 23:59:59 +0900')
+        self.assertEqual(deadline_label({'kind':'datetime','at':'2030-04-06T23:59:00+09:00'}),'2030-04-06 23:59 +0900')
+        self.assertEqual(deadline_label({'kind':'datetime','at':'2030-04-06T23:59:59.123000+09:00'}),'2030-04-06 23:59:59.123 +0900')
+        self.assertNotIn('23:59',deadline_label({'kind':'date','date':'2030-04-06'}))
+
     def test_source_gaps_and_future_pools_are_retained_without_becoming_application_advice(self):
         with Store(':memory:') as s:
             s.set_profile('p',{})

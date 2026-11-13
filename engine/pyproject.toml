@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-research-engine"
+version = "0.3.0a3"
+description = "Durable source collection, work queues and evidence-linked job research"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+jr-engine = "job_research_engine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["job_research_engine*"]

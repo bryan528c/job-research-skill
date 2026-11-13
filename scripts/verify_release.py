@@ -3,25 +3,25 @@
 from pathlib import Path
 import hashlib,json,re
 from zipfile import ZipFile
-from build_release import ROOT,ARTIFACT_NAMES,make_portable
+from build_release import ROOT,ARTIFACT_NAMES,make_portable,payload_sources
 
 def digest(data:bytes)->str:
     return hashlib.sha256(data).hexdigest()
 
 def verify(root:Path=ROOT)->dict:
-    version=(root/'VERSION').read_text().strip()
-    manifest=json.loads((root/'dist/manifest.json').read_text())
-    source=json.loads((root/'PACKAGE_MANIFEST.json').read_text())
+    version=(root/'VERSION').read_text(encoding='utf-8').strip()
+    manifest=json.loads((root/'dist/manifest.json').read_text(encoding='utf-8'))
+    source=json.loads((root/'PACKAGE_MANIFEST.json').read_text(encoding='utf-8'))
     if manifest['version']!=version or source['version']!=version:
         raise ValueError('manifest version mismatch')
     core=(root/'skills/job-research/SKILL.md').read_bytes()
     if f'version: "{version}"' not in core.decode():
         raise ValueError('skill version mismatch')
-    helper=(root/'skills/job-research/scripts/job_research.py').read_text()
+    helper=(root/'skills/job-research/scripts/job_research.py').read_text(encoding='utf-8')
     if f"VERSION = '{version}'" not in helper:
         raise ValueError('helper version mismatch')
     for name in ['plugin.json','.codex-plugin/plugin.json']:
-        if json.loads((root/name).read_text())['version']!=version:
+        if json.loads((root/name).read_text(encoding='utf-8'))['version']!=version:
             raise ValueError('plugin version mismatch')
     if manifest['canonical_skill_sha256']!=digest(core):
         raise ValueError('canonical skill hash mismatch')
@@ -35,6 +35,8 @@ def verify(root:Path=ROOT)->dict:
         raise ValueError('unexpected release artifact inventory')
     prefixes={'job-research-upload-root.zip':'','job-research-claude.zip':'job-research/',
               'job-research-openai-plugin.zip':'job-research/skills/job-research/'}
+    payload=payload_sources(root)
+    if set(payload)!=set(manifest['payload']):raise ValueError('source/runtime payload inventory mismatch')
     for name,prefix in prefixes.items():
         archive=root/'dist'/name
         if digest(archive.read_bytes())!=manifest['artifacts'][name]:
@@ -49,7 +51,7 @@ def verify(root:Path=ROOT)->dict:
             if set(z.namelist())!=expected or len(z.namelist())!=len(expected):
                 raise ValueError('archive payload inventory mismatch')
             for rel,sha in manifest['payload'].items():
-                data=(root/'skills/job-research'/rel).read_bytes()
+                data=payload[rel].read_bytes()
                 if digest(data)!=sha or z.read(prefix+rel)!=data:
                     raise ValueError('payload bytes mismatch: '+rel)
     for rel,sha in source['files'].items():

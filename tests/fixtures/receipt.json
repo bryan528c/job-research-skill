@@ -1,6 +1,6 @@
 {
   "synthetic": true,
-  "skill_version": "0.2.0-rc.2",
+  "skill_version": "0.3.0-alpha.3",
   "scope": "broad",
   "scope_status": "complete",
   "evidence_assurance": "synthetic_not_execution_evidence",

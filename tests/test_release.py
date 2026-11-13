@@ -29,6 +29,12 @@ def load(path):return json.loads((ROOT/path).read_text(encoding='utf-8'))
 def job():return copy.deepcopy(load('tests/fixtures/report.json')['jobs'][0])
 def receipt():return copy.deepcopy(load('tests/fixtures/receipt.json'))
 
+def make_symlink(case,path,target,*,directory=False):
+    try:path.symlink_to(target,target_is_directory=directory)
+    except OSError as exc:
+        if getattr(exc,'winerror',None)==1314:case.skipTest('not_run: Windows account cannot create symlinks (WinError 1314); CI Linux executes these checks')
+        raise
+
 class PackageTests(unittest.TestCase):
     def test_frontmatter(self):
         s=(ROOT/'skills/job-research/SKILL.md').read_text()
@@ -131,7 +137,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             shutil.copytree(ROOT/'skills',root/'skills')
-            (root/'skills/job-research/references/linked.md').symlink_to(ROOT/'README.md')
+            make_symlink(self,root/'skills/job-research/references/linked.md',ROOT/'README.md')
             with self.assertRaises(ValueError):B.build(root)
 
     def test_package_manifest_refreshes_source_hash_without_private_files(self):
@@ -393,7 +399,7 @@ class InstallerAndGraderTests(unittest.TestCase):
             with self.assertRaises(ValueError):I.install('made-up',Path(d))
     def test_installer_rejects_symlink_destination(self):
         with tempfile.TemporaryDirectory() as d,tempfile.TemporaryDirectory() as other:
-            (Path(d)/'.agents').symlink_to(Path(other),target_is_directory=True)
+            make_symlink(self,Path(d)/'.agents',Path(other),directory=True)
             with self.assertRaises(ValueError):I.install('codex',Path(d),True)
     def test_grader_detects_miss_and_report_loss(self):
         o=load('tests/oracles/discovery.expected.json');one=o['recommend'][0]
@@ -420,12 +426,12 @@ class InstallerAndGraderTests(unittest.TestCase):
 
     def test_installer_rejects_symlink_source_root(self):
         with tempfile.TemporaryDirectory() as d:
-            link=Path(d)/'source';link.symlink_to(ROOT/'skills/job-research',target_is_directory=True)
+            link=Path(d)/'source';make_symlink(self,link,ROOT/'skills/job-research',directory=True)
             with self.assertRaises(ValueError):I.install('codex',Path(d)/'project',True,link)
 
     def test_installer_rejects_symlink_above_project(self):
         with tempfile.TemporaryDirectory() as d,tempfile.TemporaryDirectory() as other:
-            link=Path(d)/'parent';link.symlink_to(Path(other),target_is_directory=True)
+            link=Path(d)/'parent';make_symlink(self,link,Path(other),directory=True)
             with self.assertRaises(ValueError):I.install('codex',link/'project',True)
             self.assertFalse((Path(other)/'project').exists())
 

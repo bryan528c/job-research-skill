@@ -3,9 +3,9 @@
   "kind": "packaging_checks_not_runtime_validation",
   "canonical_skill_sha256": "00fd6fbdb9e2929a449b640b012b3589e3706d233ed3e4695584f94e101e7288",
   "artifacts": {
-    "job-research-claude.zip": "94730970139e55f774beceaaab27bbe437fb2a478eb75b02730525879e1d4373",
-    "job-research-openai-plugin.zip": "7ff58f75fd4049b4eac3403b5f32c9850bd5db6f62e57ef459f7a801838635ab",
-    "job-research-upload-root.zip": "3090eaba1c4ec4a01006f827da4f3ea324fc992d1ae7b4fb9d8725e5563132ea"
+    "job-research-claude.zip": "7369fc8ecf8a1e6df31f175997e2ca66a9fa22a57ed663fe3b347f746ea1f24c",
+    "job-research-openai-plugin.zip": "91b393d5a571c150a87cc0c5a39ba7ab410e12071ee487b02bb9aae657adaf19",
+    "job-research-upload-root.zip": "71cf56927e413d9cab64ba4ca0dc63d79f0c889d91a036b4985a517306356aaf"
   },
   "portable_sha256": "600709c12f6823eb11fba1095c4c36e7b0290c8b4f17ba20f38de5167d47d672",
   "payload": {
@@ -27,28 +27,30 @@
     "scripts/research.py": "27ff0e855ae89641870429939c5bd75a5f3c96a392421c058737617062dcaa2e",
     "scripts/runtime/job_research_engine/__init__.py": "31393ef788995ecb55e6a831cc0348f01c682968a915dec51ab0773bded70148",
     "scripts/runtime/job_research_engine/__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
-    "scripts/runtime/job_research_engine/adapters.py": "c83e68e051256d0127c0d3bba28b5329f6fe1f97e5ec3d02a343e0fe3b296cf2",
-    "scripts/runtime/job_research_engine/cli.py": "bd39fae685c7ee8dafd478bfb0099a4c2a5d478141389bf259fd5a38caa9c800",
+    "scripts/runtime/job_research_engine/adapters.py": "8e0006a46bd3be7139e66ae4100a74f2ffa0ebc75229c91028ef487a6edb3491",
+    "scripts/runtime/job_research_engine/cli.py": "8dbac5f4fcafb6fed8505f333146ed691a3cf495e2aae184e912fccb8355b9a0",
+    "scripts/runtime/job_research_engine/comparison.py": "dac2a4b5b6df76b3f05b704a080407b47406600ab5066825248bdfb529035f47",
     "scripts/runtime/job_research_engine/discovery.py": "2b5fc869329fbcf076197b8d3fa52d918593114f7d18b77725591d497a05e0cb",
     "scripts/runtime/job_research_engine/domestic.py": "7656acce8f8e00f66fc7c9a45d9237dfed71932a20b2864c0c815416715ab7d6",
     "scripts/runtime/job_research_engine/frontier.py": "53a920dcd6523a0c05a2121b6559c36b2d2a2517e818106296c69a570fde98c3",
-    "scripts/runtime/job_research_engine/funnel.py": "38df502c164fa5037c9aaeee493cec72a49e57974b894aa2924bbe527df6eeca",
+    "scripts/runtime/job_research_engine/funnel.py": "2dd8a0244c7f1d68ee2576281764a910737be16aa6fa7fcc6bee00089932b9c1",
+    "scripts/runtime/job_research_engine/gamejob.py": "862ddb833348e2d80e94a31d0986d83fa9fdb8b4ab81efa552514d3346d47f3c",
     "scripts/runtime/job_research_engine/groups.py": "e6d651212322b0e4d39879a183e24e9e42b345186893b6014e5299bad0145532",
     "scripts/runtime/job_research_engine/htmltools.py": "aaa2855dbafc20843cc595efbea526c4aadfd870f08fde9923093cc2befdfd4c",
     "scripts/runtime/job_research_engine/hyundai.py": "2d8ad64f45431d4db19024bc29b0a82317d8440efce495245e496331fbb040a5",
     "scripts/runtime/job_research_engine/identity.py": "a0980c86c0fdfe9830e22d491d26d8b4cf0e437785ced97cd72179cb5da780fb",
-    "scripts/runtime/job_research_engine/jobkorea.py": "8e39dc18ddee00b705e474f615a24df6725cac95fa5a6da2ef36c0780070e01d",
-    "scripts/runtime/job_research_engine/korean.py": "2e7ba2ebc5965135881e71f88ffa20ffe3595f1ed7eb663e8990832b81c85a70",
+    "scripts/runtime/job_research_engine/jobkorea.py": "6acc3260e9f91862d3695bf4303cfa3733a4ff0fe0887e228cc8f19fa63420bd",
+    "scripts/runtime/job_research_engine/korean.py": "21b880158e3bdeba64765eaa17ddf5787939c0215d3b678e4feaddd5e7d3f370",
     "scripts/runtime/job_research_engine/legacy.py": "65581ae7af2cc83d73dbd7657570fd30a51dabec708eec3702dcb0a51c6120ff",
     "scripts/runtime/job_research_engine/legacy_sources.py": "39ffdd7bca55974869fdbeb20799b074c19a3ae5aa40d4c5889bfd5616cd6482",
     "scripts/runtime/job_research_engine/model.py": "d827dcd9f564db615e0b292a69b02a4b2692fa7bf51fe0c9fa179bf21774250e",
     "scripts/runtime/job_research_engine/ninehire.py": "fdd353b25db364c575f4a4aa92ae5a14cddd01573e8f859713584e34215a7adc",
     "scripts/runtime/job_research_engine/registries.py": "ea6a542eca839558b1248f79bb0fe53da4c831d80400ac249f91a51b7ea053fc",
     "scripts/runtime/job_research_engine/registry.py": "5261006a7d49b0144467f3119fbad11d59b741bd6cea56d279a057deefc73d9b",
-    "scripts/runtime/job_research_engine/report.py": "01a81242eb1a4dbcca1421a31b389c317f1d440b3d83265c44708e9c8830180b",
-    "scripts/runtime/job_research_engine/runtime.py": "f53808b94c61d3bd9c2f450cacb52aacf4f07b2b759fda13f10ead597232c543",
-    "scripts/runtime/job_research_engine/store.py": "5f88081373876c8cbff7ad80beaabcaacdb9ea0db1f4b4e856852831a4dc2832",
+    "scripts/runtime/job_research_engine/report.py": "fd00910a239c46072c3cc35288d6360ae23fdb7500ad045adaa2c07dbbe2fa18",
+    "scripts/runtime/job_research_engine/runtime.py": "27600248c2d9f1311d277c5ec0190e22d3f727d7716a6d5697ad9e716104e76a",
+    "scripts/runtime/job_research_engine/store.py": "505fe019d1a90de15e080d3f10445214f339acbe8bab92d7696659f87e74046d",
     "scripts/runtime/job_research_engine/transport.py": "197b428c4682a975712dd1670986e49c83b6e91bf241804f49afefd3fb2f23a0",
-    "scripts/runtime/job_research_engine/worker.py": "1f28ba82bd2c66dd8736596304c934ba6b8df90d51b06619d028fe4b11963684"
+    "scripts/runtime/job_research_engine/worker.py": "998413a5616dd0417b48b8bce0877e5f12ee1786f10cf71e8ce3273e2402abcc"
   }
 }

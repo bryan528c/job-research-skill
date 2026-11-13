@@ -67,6 +67,18 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
     rows=store.list_run_jobs(run_id);coverage=store.coverage(run_id)
     actionable=[j for j in rows if j['fresh_application'] and j['recruiting_status']!='closed' and j['effective_decision'] in {'recommend','check'} and j['report_tier']=='actionable']
     actionable.sort(key=lambda j:(deadline_key(j['content']['deadline'],zone),j['employer'],j['title'],j['id']))
+    # An explicit same-role/round bridge represents a mirrored posting once.
+    # Distinct campaign roles and new rounds have no implicit equivalence.
+    groups=[];represented=set()
+    for job in actionable:
+        if job['id'] in represented:continue
+        related=set(store.same_posting_ids(job['id']))
+        group=[j for j in actionable if j['id'] in related]
+        primary=min(group,key=lambda j:(j['effective_decision']!='recommend',not j['detail_observed_this_run'],j['id']))
+        groups.append((primary,[j['id'] for j in group if j['id']!=primary['id']]))
+        represented.update(j['id'] for j in group)
+    groups.sort(key=lambda group:(deadline_key(group[0]['content']['deadline'],zone),group[0]['employer'],group[0]['title'],group[0]['id']))
+    actionable=[j for j,_ in groups]
     # Preserve every worthwhile candidate. Age/freshness warnings never delete its identity.
     tz=local_zone(zone);asof=timestamp(store._now())
     day=(asof.astimezone(tz) if tz else asof).date().isoformat()
@@ -74,10 +86,11 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
     recs=sum(j['effective_decision']=='recommend' and not past_deadline(j['content']['deadline'],store._now(),zone) for j in actionable)
     lines.append(conclusion or (f'지원 검토 {recs}건, 확인 필요 {len(actionable)-recs}건.' if actionable else '확인된 추천이 아직 없어.'))
     lines.append('');mapping=[]
-    for num,j in enumerate(actionable,1):
+    for num,(j,equivalents) in enumerate(groups,1):
         assessment=j['assessment'] or {};decision=j['effective_decision'];warnings=[]
         if not j['assessment_current']:warnings.append('개인 조건 또는 공고 변경 후 재평가 필요')
         if not j['detail_observed_this_run']:warnings.append('이전 후보 보존 · 현재 상세/모집 상태 재확인 필요')
+        if j.get('opening_recheck_due'):warnings.append('접수 시작 후 현재 모집 상태·지원 경로 재확인 필요')
         if past_deadline(j['content']['deadline'],store._now(),zone):
             decision='check';warnings.append('표시된 마감 경과 · 연장/새 회차 확인 전 제출 권고 아님')
         if assessment.get('risk'):warnings.append(assessment['risk'])
@@ -90,10 +103,11 @@ def render(store: Store,run_id: str, *, conclusion: str | None=None,offer_follow
         if j['apply_url'] and j['apply_url']!=j['job_url']:
             target=public_url(j['apply_url']).replace('(','%28').replace(')','%29')
             gate=settings.get('application_gate')
-            label='지원 시작(가입 화면)' if gate=='registration' else '지원 시작(로그인 필요)' if gate=='login' else '지원하기'
+            label='지원 안내' if settings.get('application_link_kind')=='announcement' else '지원 시작(가입 화면)' if gate=='registration' else '지원 시작(로그인 필요)' if gate=='login' else '지원하기'
             links+=f' · [{label}]({target})'
         lines.extend([links,''])
-        mapping.append({'number':num,'job_id':j['id'],'content_hash':j['content_hash'],'effective_decision':decision})
+        mapping.append({'number':num,'job_id':j['id'],'content_hash':j['content_hash'],'effective_decision':decision,
+            **({'equivalent_job_ids':equivalents} if equivalents else {})})
     pending=sum(j['effective_decision']=='pending' and j['fresh_application'] and j['recruiting_status']!='closed' for j in rows)
     if pending:lines.extend([f'평가 전 후보 {pending}건은 제외하지 않고 보존했어.',''])
     elapsed=sum(j['deadline_elapsed'] and j['recruiting_status']!='closed' and j['effective_decision'] in {'recommend','check'} for j in rows)

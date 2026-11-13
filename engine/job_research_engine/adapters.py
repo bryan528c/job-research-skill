@@ -48,6 +48,10 @@ def request_url(source: dict, cursor: str | None) -> tuple[str,str | None]:
     """Return a credential-free endpoint plus an optional environment variable name."""
     settings=json.loads(source['settings_json'])
     kind=source['kind'];url=public_url(source['url']);p=urlsplit(url)
+    if kind in {'gamejob-list','gamejob-detail'}:
+        from .gamejob import posting_id,is_list_url
+        if not (posting_id(url) if kind=='gamejob-detail' else is_list_url(url)):raise EngineError('Exact public GameJob read route required')
+        return url,None
     from .groups import cj_request,detect_kind as group_kind
     if kind=='cj-list':return cj_request(url,cursor,settings),None
     if kind in {'doosan-list','doosan-detail','cj-detail'}:
@@ -82,6 +86,13 @@ def request_url(source: dict, cursor: str | None) -> tuple[str,str | None]:
 
 def parse_page(source: dict, payload: bytes, cursor: str | None=None) -> Page:
     kind=source['kind'];settings=json.loads(source['settings_json']);employer=settings.get('employer')
+    if kind=='gamejob-list':
+        from .gamejob import discovery_page
+        return discovery_page(payload,source['url'])
+    if kind=='gamejob-detail':
+        from .gamejob import parse_detail
+        return Page([parse_detail(payload,source['url'])],True,expected_total=1,
+            scope_note='One public GameJob posting; both observed description frames remain separate work, not channel exhaustion')
     if kind=='ninehire-list' or settings.get('inventory_contract')=='ninehire-rendered':
         from .ninehire import parse_rendered_inventory
         return parse_rendered_inventory(payload,source['url'],settings)

@@ -5,7 +5,7 @@ import re
 import time
 from urllib.parse import urlsplit
 from .adapters import parse_page,request_url
-from .model import EngineError,LeaseLost
+from .model import EngineError,LeaseLost,Page
 from .store import Store
 from .transport import FetchError,PublicHTTP
 
@@ -67,6 +67,31 @@ def collect(store: Store,run_id: str, *, transport=None, budget_seconds: float |
                 if source['policy']!='public_read_form':raise FetchError('read_form_policy_required','public inventory form needs explicit reviewed policy')
                 response=transport.read_form(url,{'sort':'2','searchText':'','corpCode':'','jobRole':'','recruitType':'','workingType':'','workingRegion':'',**json.loads(source['settings_json']).get('filters',{})})
             else:response=transport.get(url,secret_query=secrets)
+            if actual_kind=='gamejob-detail':
+                from .gamejob import parse_detail as gamejob_detail,description_frame,with_descriptions
+                job=gamejob_detail(response.body,url)
+                parts=[];observations=[]
+                with store.transaction():
+                    store._check_lease(task['id'],task['lease_token'])
+                    outer=store._observe(task,response.url,response.body,media_type='text/html',origin=getattr(transport,'evidence_origin','native_http'),tool_ref=None,observed_at=None)
+                for frame in job.source_context['observed_description_frames']:
+                    if source['policy']=='robots' and not transport.permitted_by_robots(frame['url']):
+                        raise FetchError('robots_disallowed','observed GameJob description frame restricted')
+                    response=transport.get(frame['url'])
+                    part=description_frame(response.body,response.url,job.external_id)
+                    with store.transaction():
+                        store._check_lease(task['id'],task['lease_token'])
+                        observations.append(store._observe(task,response.url,response.body,media_type='text/html',origin=getattr(transport,'evidence_origin','native_http'),tool_ref=None,observed_at=None))
+                    parts.append(part)
+                job=with_descriptions(job,parts,[outer,*observations])
+                if task['kind']=='inventory':
+                    result=store.commit_page(task['id'],task['lease_token'],Page([job],True,expected_total=1,
+                        scope_note='One supplied public GameJob detail; channel discovery/exhaustion not claimed'),
+                        source_url=response.url,payload=response.body,media_type='text/html',origin=getattr(transport,'evidence_origin','native_http'))
+                    if result['gap']:blocked+=1
+                else:
+                    store.commit_detail(task['id'],task['lease_token'],job,source_url=response.url,payload=response.body,origin=getattr(transport,'evidence_origin','native_http'))
+                pages+=1;continue
             if task['kind']!='inventory':
                 from .korean import detect_kind,parse_detail
                 detail_settings=json.loads(source['settings_json'])

@@ -140,7 +140,9 @@ def parse_sk(payload,url):
     if end['kind']=='date' and clock and re.fullmatch(r'\d{2}:\d{2}',clock):end={'kind':'datetime','at':end['date']+'T'+clock+':00+09:00'}
     candidates=[n for n in root.walk() if n.tag in {'button','a'} and ('지원하기' in n.text() or 'Apply'==n.text())]
     open_button=any('disabled' not in n.attrs for n in candidates)
-    closed=any(x in text for x in ('접수가 마감','모집이 마감','채용이 마감'))
+    closed=any(x in text for x in ('접수가 마감','모집이 마감','채용이 마감')) or any(
+        n.text().strip().casefold() in {'application closed','applications closed','recruitment closed','지원서 접수마감','접수마감','지원 마감'}
+        for n in root.walk() if n.tag in {'button','a'})
     # Do not fabricate the login URL from JavaScript. Host may record its actually observed destination.
     apply_url=None
     for n in candidates:
@@ -154,6 +156,9 @@ def parse_sk(payload,url):
                raw={'provider':'skcareers','apply_action':'onsite login-required button','media_urls':media})
 
 def detect_kind(url):
+    from .gamejob import posting_id,is_list_url
+    if posting_id(url):return 'gamejob-detail'
+    if is_list_url(url):return 'gamejob-list'
     from .groups import detect_kind as group_kind
     if (kind:=group_kind(url)):return kind
     from .domestic import detect_kind as domestic_kind
@@ -174,6 +179,9 @@ def detect_kind(url):
     return 'html-discovery'
 
 def parse_detail(kind,payload,url,settings):
+    if kind=='gamejob-detail':
+        from .gamejob import parse_detail as gamejob_detail
+        return gamejob_detail(payload,url)
     if kind=='cj-detail':
         from .groups import parse_cj_detail
         return parse_cj_detail(payload,url,settings)
@@ -287,11 +295,13 @@ def parse_detail(kind,payload,url,settings):
         # Structured metadata is a discovery signal, never live application confirmation.
         job=replace(page.jobs[0],status='unknown',requires_role_split=True,detail_verified=False)
         if kind=='jobkorea-detail':
-            from .jobkorea import observed_iframe
+            from .jobkorea import observed_iframe,page_metadata
             try:iframe=observed_iframe(payload,url,job.external_id)
             except EngineError:iframe=None
-            job=replace(job,source_context={**job.source_context,'observed_description_iframe':iframe,
-                'metadata_only':True})
+            metadata=page_metadata(payload)
+            job=replace(job,job_url=public_url(url),deadline=metadata.get('deadline',{'kind':'unknown'}),
+                source_context={**job.source_context,'observed_description_iframe':iframe,
+                'observed_page_metadata':metadata,'structured_deadline':job.deadline,'metadata_only':True})
         return job
     raise EngineError('unsupported detail contract; authorized host inspection required')
 

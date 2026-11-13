@@ -616,6 +616,16 @@ class Store:
             (oid, task["source_id"], task["id"], source_url, at, origin, tool_ref, digest(payload), media_type, payload))
         return oid
 
+    @staticmethod
+    def _retain_separate_deadline(job,previous,observed_at):
+        from dataclasses import replace
+        if previous:
+            content=json.loads(previous['content_json'])
+            evidence=content.get('source_context',{}).get('deadline_evidence')
+            if evidence and (timestamp(observed_at)<timestamp(evidence['observed_at']) or job.deadline['kind']=='unknown'):
+                return replace(job,deadline=content['deadline'],source_context={**job.source_context,'deadline_evidence':evidence})
+        return job
+
     def _job_company(self,source,employer,run_id,observation_id):
         # An official homepage can link a whole group's board. Its registry
         # owner is not automatically the legal employer of every posting.
@@ -673,9 +683,10 @@ class Store:
             for job in page.jobs:
                 company_id=self._job_company(source,job.employer,task['run_id'],oid)
                 jid = stable_id(source["id"], job.external_id, job.round_key)
+                old = self.db.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+                if job.detail_verified:job=self._retain_separate_deadline(job,old,at)
                 content, encoded = job.content(), dump(job.content())
                 chash = digest(encoded)
-                old = self.db.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
                 # Replayed older snapshots cannot overwrite newer facts.
                 if old and at < old["last_seen"]:
                     self.db.execute("INSERT OR IGNORE INTO job_sightings VALUES(?,?,?,?)", (task["run_id"],jid,task_id,oid))
@@ -772,8 +783,10 @@ class Store:
             if task['kind']=='image_review' and not job.detail_verified:
                 raise EngineError('image review needs an observed transcription; block unreadable input instead')
             oid=self._observe(task,source_url,payload,media_type=media_type,origin=origin,tool_ref=tool_ref,observed_at=observed_at)
-            at=self.row('observations',oid)['observed_at'];encoded=dump(job.content());chash=digest(encoded)
+            at=self.row('observations',oid)['observed_at']
             previous=self.db.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone()
+            job=self._retain_separate_deadline(job,previous,at)
+            encoded=dump(job.content());chash=digest(encoded)
             if previous and at<previous['last_seen'] and job.detail_verified and not previous['detail_verified'] and not json.loads(previous['content_json']).get('description'):
                 listing=self.db.execute('SELECT t.kind FROM observations o JOIN tasks t ON t.id=o.task_id WHERE o.id=?',(previous['latest_observation_id'],)).fetchone()
                 if listing and listing[0]=='inventory':
@@ -870,6 +883,18 @@ class Store:
                     company_id=self._catalog_employer({**self.row('sources',parent['source_id']),'company_id':None},employer,run_id,parent['latest_observation_id'])
                 child={**content,'external_id':external,'title':title,'employer':employer,'description':description,
                        'campaign_title':parent['title'],'requires_role_split':False,'parent_content_hash':parent['content_hash']}
+                if 'source_sections' in role:
+                    sections=role['source_sections']
+                    if not isinstance(sections,dict) or not sections or set(sections)-{'duties','required','preferred','common'}:
+                        raise EngineError('role source sections must distinguish duties, required, preferred and common terms')
+                    for values in sections.values():
+                        if not isinstance(values,list) or not values:
+                            raise EngineError('role source sections require nonempty quote lists')
+                        for value in values:
+                            value=required(value,'role source section quote')
+                            if value not in content['description'] or value not in description:
+                                raise EngineError('role source quote must occur in both the campaign and this individual role')
+                    child['role_source_sections']=sections
                 if role.get('location'):child['location']=role['location']
                 status=role.get('recruiting_status',parent['recruiting_status'])
                 if status not in {'open','closed','unknown'}:raise EngineError('invalid observed role recruiting status')
@@ -973,6 +998,31 @@ class Store:
             if parent:conflict=self._inventory_detail_conflict(parent,include_parent=False)
         return conflict
 
+    def amend_deadline(self,run_id: str,job_id: str,*,deadline: dict,expected_content_hash: str,
+                       source_url: str,evidence_text: str,tool_ref: str,observed_at: str) -> str:
+        """A header correction is not a fresh reading of the whole job body."""
+        from .model import validate_deadline
+        validate_deadline(deadline);required(evidence_text,'actual observed deadline evidence')
+        with self.transaction():
+            job=self.row('jobs',job_id)
+            if job['content_hash']!=expected_content_hash:raise EngineError('job changed; review deadline amendment again')
+            if not self.db.execute('SELECT 1 FROM run_jobs WHERE run_id=? AND job_id=?',(run_id,job_id)).fetchone():
+                raise EngineError('deadline amendment is outside this run')
+            if timestamp(observed_at)<timestamp(job['last_seen']):raise EngineError('older header cannot overwrite newer job evidence')
+            prior_evidence=json.loads(job['content_json']).get('source_context',{}).get('deadline_evidence')
+            if prior_evidence and timestamp(observed_at)<timestamp(prior_evidence['observed_at']):
+                raise EngineError('older header cannot overwrite the newer separate deadline evidence')
+            oid=self._observe({'id':None,'source_id':job['source_id']},source_url,evidence_text.encode('utf8'),
+                media_type='text/plain',origin='host_export',tool_ref=tool_ref,observed_at=observed_at)
+            content=json.loads(job['content_json']);content['deadline']=deadline
+            content['source_context']={**content.get('source_context',{}),'deadline_evidence':{
+                'observation_id':oid,'observed_at':canonical_time(observed_at),'body_observation_id':job['latest_observation_id']}}
+            encoded=dump(content);chash=digest(encoded)
+            self.db.execute('UPDATE jobs SET content_json=?,content_hash=? WHERE id=?',(encoded,chash,job_id))
+            self.db.execute('INSERT OR IGNORE INTO job_versions VALUES(?,?,?,?,?)',(job_id,chash,oid,canonical_time(observed_at),encoded))
+            self._log('job',job_id,'deadline_amended_without_body_refresh',{'observation':oid,'body_observation':job['latest_observation_id']})
+        return oid
+
     def assess(self, profile_id: str, job_id: str, *, decision: str, reason: str,
                evidence_ids: list[str], expected_profile_revision: int, expected_content_hash: str,
                risk: str = "", blocking_unknowns: list[str] | None = None,
@@ -994,6 +1044,9 @@ class Store:
                 raise EngineError("latest job evidence must be considered")
             unknowns = blocking_unknowns or []
             content=json.loads(job['content_json'])
+            deadline_evidence=content.get('source_context',{}).get('deadline_evidence',{}).get('observation_id')
+            if deadline_evidence and deadline_evidence not in evidence_ids:
+                raise EngineError('latest separate deadline evidence must also be considered')
             opens=content.get('application_opens_at')
             if decision == "recommend" and (unknowns or self._inventory_detail_conflict(job) or job["recruiting_status"] != "open" or not job["detail_verified"] or content.get('requires_role_split') or opens and timestamp(opens)>timestamp(self._now()) or job['external_id'].startswith('campaign:') and ':role:' not in job['external_id']):
                 raise EngineError("recommendation lacks verified details or has a blocking unknown")
@@ -1033,11 +1086,47 @@ class Store:
             self._log("user_event",eid,"recorded",{"scope":scope_type,"target":target_id,"kind":kind,"value":value})
         return eid
 
+    def same_posting_ids(self,job_id: str) -> list[str]:
+        """Only explicit host-evidenced equivalences, never employer/title similarity."""
+        return [r[0] for r in self.db.execute('''WITH RECURSIVE related(id) AS (
+            SELECT ? UNION SELECT CASE WHEN l.left_id=r.id THEN l.right_id ELSE l.left_id END
+            FROM job_links l JOIN related r ON (l.left_id=r.id OR l.right_id=r.id)
+            WHERE l.relation='same_posting') SELECT id FROM related ORDER BY id''',(job_id,))]
+
+    def link_postings(self,left_id: str,right_id: str,*,evidence_ref: str) -> str:
+        """A host must verify the exact employer, individual role and recruiting round."""
+        required(evidence_ref,'observed same-role and same-round evidence')
+        self.row('jobs',left_id);self.row('jobs',right_id)
+        if left_id==right_id:raise EngineError('a posting cannot be linked to itself')
+        component=set(self.same_posting_ids(left_id)+self.same_posting_ids(right_id))
+        placeholders=','.join('?' for _ in component)
+        if self.db.execute(f'''SELECT 1 FROM job_links WHERE relation='role_child'
+            AND left_id IN ({placeholders}) AND right_id IN ({placeholders}) LIMIT 1''',
+            (*component,*component)).fetchone():
+            raise EngineError('campaign containers and individual roles are not the same posting')
+        left_id,right_id=sorted((left_id,right_id));lid=stable_id('same_posting',left_id,right_id)
+        with self.transaction():
+            existing=self.db.execute("SELECT id FROM job_links WHERE relation='same_posting' AND ((left_id=? AND right_id=?) OR (left_id=? AND right_id=?))",(left_id,right_id,right_id,left_id)).fetchone()
+            if existing:return existing[0]
+            self.db.execute('INSERT INTO job_links VALUES(?,?,?,?,?,?)',(lid,left_id,right_id,'same_posting',evidence_ref,self._now()))
+            self._log('job_link',lid,'same_posting_verified',{'left_id':left_id,'right_id':right_id,'evidence_ref':evidence_ref})
+        return lid
+
+    def unlink_postings(self,left_id: str,right_id: str,*,reason: str) -> None:
+        required(reason,'reversible posting-link correction')
+        with self.transaction():
+            links=self.db.execute("SELECT * FROM job_links WHERE relation='same_posting' AND ((left_id=? AND right_id=?) OR (left_id=? AND right_id=?))",(left_id,right_id,right_id,left_id)).fetchall()
+            if not links:raise EngineError('same-posting link not found')
+            for link in links:
+                self._log('job_link',link['id'],'same_posting_unlinked',{'link':dict(link),'reason':reason})
+                self.db.execute('DELETE FROM job_links WHERE id=?',(link['id'],))
+
     def latest_user_state(self, profile_id: str, job: dict) -> dict:
         result = {"decision":"undecided","application":"not_started"}
-        events = self.db.execute("""SELECT * FROM user_events WHERE profile_id=? AND
-            ((scope_type='job' AND target_id=?) OR (scope_type='company' AND target_id=?))
-            ORDER BY created_at,rowid""",(profile_id,job["id"],job["company_id"])).fetchall()
+        ids=self.same_posting_ids(job['id']);placeholders=','.join('?' for _ in ids)
+        events = self.db.execute(f"""SELECT * FROM user_events WHERE profile_id=? AND
+            ((scope_type='job' AND target_id IN ({placeholders})) OR (scope_type='company' AND target_id=?))
+            ORDER BY created_at,rowid""",(profile_id,*ids,job["company_id"])).fetchall()
         for event in events:
             result[event["kind"]] = event["value"]
         return result
@@ -1060,6 +1149,9 @@ class Store:
             if inventory_conflict:current=False
             tier=self.db.execute('SELECT report_tier FROM assessment_reporting WHERE assessment_id=?',(assessment['id'],)).fetchone() if assessment else None
             content=json.loads(job['content_json'])
+            opening_due=bool(tier and tier[0]=='upcoming' and content.get('application_opens_at')
+                and timestamp(content['application_opens_at'])<=timestamp(self._now()))
+            if opening_due:current=False
             parent=self.db.execute("SELECT j.content_hash FROM job_links l JOIN jobs j ON j.id=l.left_id WHERE l.right_id=? AND l.relation='role_child'",(job['id'],)).fetchone()
             if parent and content.get('parent_content_hash')!=parent[0]:current=False
             effective=assessment["decision"] if current else "pending"
@@ -1069,7 +1161,8 @@ class Store:
             if effective=="recommend" and not detail_seen:
                 effective="check"
             job.update(content=json.loads(job["content_json"]),assessment=dict(assessment) if assessment else None,
-                       report_tier=tier[0] if tier else 'actionable',
+                       report_tier='actionable' if opening_due else tier[0] if tier else 'actionable',
+                       opening_recheck_due=opening_due,
                        assessment_current=current,user_state=state,seen_this_run=seen,detail_observed_this_run=detail_seen,
                        inventory_detail_conflict=inventory_conflict,effective_decision=effective)
             job["fresh_application"] = state["decision"]!="declined" and state["application"] in {"not_started","draft","written"}
@@ -1198,7 +1291,14 @@ class Store:
         rows=self.list_run_jobs(run_id)
         expected={j["id"] for j in rows if j["fresh_application"] and
                   j["recruiting_status"]!="closed" and j["effective_decision"] in {"recommend","check"} and j['report_tier']=='actionable'}
-        shown={m["job_id"] for m in mapping}
+        shown=set()
+        for item in mapping:
+            represented=[item['job_id'],*item.get('equivalent_job_ids',[])]
+            if len(represented)!=len(set(represented)) or shown.intersection(represented):
+                raise EngineError('duplicate report representation')
+            if not set(represented)<=set(self.same_posting_ids(item['job_id'])):
+                raise EngineError('report equivalence lacks same-posting evidence')
+            shown.update(represented)
         if expected != shown:
             raise EngineError("report reconciliation failed: worthwhile jobs lost or invented")
         gaps={j['id'] for j in rows if j['effective_decision']=='check' and j['report_tier']!='actionable'}

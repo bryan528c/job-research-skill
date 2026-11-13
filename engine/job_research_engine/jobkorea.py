@@ -9,6 +9,23 @@ from .htmltools import html,media_references
 from .model import EngineError,public_url
 
 
+def page_metadata(payload):
+    """Labelled public page fields, kept separate from an unread job body."""
+    descriptions=[n.attrs.get('content','') for n in html(payload).walk('meta')
+        if n.attrs.get('name','').lower()=='description']
+    if len(descriptions)!=1:return {}
+    text=descriptions[0];result={'source_text':text}
+    experience=re.search(r'(?:^|[,，])\s*경력\s*:\s*(.*?)(?=\s*[,，]|$)',text)
+    if experience:result['experience_requirement']=experience.group(1).strip()
+    end=re.search(r'(?:^|[,，])\s*마감일\s*:\s*(\d{4}-\d{2}-\d{2})(?=\s*[,，]|\s*$)',text)
+    if end:
+        from datetime import date
+        try:date.fromisoformat(end.group(1))
+        except ValueError:pass
+        else:result['deadline']={'kind':'date','date':end.group(1),'timezone':'Asia/Seoul'}
+    return result
+
+
 def _walk(value):
     yield value
     if isinstance(value,dict):

@@ -34,7 +34,7 @@ class RuntimePackageTests(unittest.TestCase):
             db=temp/'private/research.sqlite'
             result=subprocess.run([sys.executable,str(temp/'isolated/scripts/research.py'),'--db',str(db),'init'],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
-            self.assertEqual(json.loads(result.stdout)['schema'],2)
+            self.assertEqual(json.loads(result.stdout)['schema'],3)
             self.assertTrue(db.is_file())
 
     def test_runtime_bytes_are_built_from_canonical_engine_only(self):

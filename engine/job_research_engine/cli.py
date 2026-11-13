@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 from . import __version__
 from .model import EngineError,dump
-from .store import Store
+from .store import Store,SCHEMA_VERSION
 from .registry import import_registry
 from .transport import PublicHTTP
 from .worker import collect,import_host_capture
@@ -59,7 +59,10 @@ def main(argv=None) -> int:
     for name in ('review-packet','coverage'):
         q=s.add_parser(name);q.add_argument('run_id')
     q=s.add_parser('assess');q.add_argument('assessment',type=Path)
+    q=s.add_parser('amend-deadline');q.add_argument('run_id');q.add_argument('job_id');q.add_argument('evidence',type=Path)
     q=s.add_parser('decision');q.add_argument('event',type=Path)
+    q=s.add_parser('link-postings');q.add_argument('left_id');q.add_argument('right_id');q.add_argument('--evidence-ref',required=True)
+    q=s.add_parser('unlink-postings');q.add_argument('left_id');q.add_argument('right_id');q.add_argument('--reason',required=True)
     q=s.add_parser('audit');q.add_argument('record',type=Path)
     q=s.add_parser('report');q.add_argument('run_id');q.add_argument('--offer-followup',action='store_true');q.add_argument('--text-only',action='store_true')
     q=s.add_parser('handoff');q.add_argument('report_id');q.add_argument('number',type=int);q.add_argument('--profile-id',required=True);q.add_argument('--facts',type=Path)
@@ -67,7 +70,7 @@ def main(argv=None) -> int:
     try:
         with Store(a.db) as store:
             cmd=a.cmd
-            if cmd=='init':result={'engine_version':__version__,'schema':2,'database':str(a.db),'persistent_read_write':'created/opened','scheduler':'not_configured'}
+            if cmd=='init':result={'engine_version':__version__,'schema':SCHEMA_VERSION,'database':str(a.db),'persistent_read_write':'created/opened','scheduler':'not_configured'}
             elif cmd=='sync-registry':result=sync_registry(store,a.provider,year=a.year,transport=PublicHTTP(enabled=a.allow_network,max_bytes=30_000_000),budget_seconds=a.budget_seconds,restart=a.restart)
             elif cmd=='reconcile-companies':result=reconcile(store)
             elif cmd=='unlink-company':unlink_company(store,a.alias_id,reason=a.reason);result={'unlinked':a.alias_id}
@@ -103,7 +106,10 @@ def main(argv=None) -> int:
             elif cmd=='review-packet':result=store.review_packet(a.run_id)
             elif cmd=='coverage':result=store.coverage(a.run_id)
             elif cmd=='assess':result={'assessment_id':store.assess(**read_json(a.assessment))}
+            elif cmd=='amend-deadline':result={'observation_id':store.amend_deadline(a.run_id,a.job_id,**read_json(a.evidence))}
             elif cmd=='decision':result={'event_id':store.user_event(**read_json(a.event))}
+            elif cmd=='link-postings':result={'link_id':store.link_postings(a.left_id,a.right_id,evidence_ref=a.evidence_ref)}
+            elif cmd=='unlink-postings':store.unlink_postings(a.left_id,a.right_id,reason=a.reason);result={'unlinked':True}
             elif cmd=='audit':result={'audit_id':store.record_audit(**read_json(a.record))}
             elif cmd=='report':
                 result=render(store,a.run_id,offer_followup=a.offer_followup)

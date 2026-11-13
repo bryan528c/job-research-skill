@@ -72,6 +72,24 @@ partition 하나를 전체 시장으로 취급하거나 스스로 분모를 줄�
 
 ## 예약
 
+### 개발 검증의 추가 인터페이스
+
+`link-postings LEFT RIGHT --evidence-ref ...`는 실제로 확인한 동일 법인·개별 직무·회차를
+연결한다. 제목 유사성이나 같은 회사만으로 호출하지 않는다. 제출/거절 이력과 보고 대표 항목이
+연결을 따르므로 잘못 연결했다면 `unlink-postings LEFT RIGHT --reason ...`로 되돌린다.
+원래 이벤트와 과거 보고 번호는 삭제하지 않는다. 보고 매핑의 `equivalent_job_ids`도 대조한다.
+
+`amend-deadline RUN JOB EVIDENCE_JSON`은 본문을 새로 읽지 못했지만 현재 공식 헤더의 마감을
+확인한 경우다. 입력에는 `deadline`, `expected_content_hash`, `source_url`, `evidence_text`,
+`tool_ref`, `observed_at`이 필요하다. 원래 본문 observation과 clock은 유지하며 새 마감
+observation을 별도로 저장한다. 재평가에는 둘 다 필요하고 과거 캡처는 최신 마감을 덮지 못한다.
+일반 사용자에게 파일 작성을 요구하지 않고 호스트가 실제 도구 관측에서 만든다.
+
+`engine/tools/compare_runs.py`는 비공개 독립 기준표와 실제 실행 export를 대조한다. 정확한
+`[posting URL, individual role key]`를 사용하고 수집·판정·보고·중복·마감/링크·미확인을 나눈다.
+`natural_unseeded`와 `direct_seeded`/`host_followthrough`를 섞지 않는다. 이 도구는 표본 작성의
+독립성이나 AI 판단의 정확성을 인증하지 않는다. 실험 절차와 남은 조건은11월13일 검증 문서 참조.
+
 이번 패키지는 타이머나 전달 채널을 만들지 않는다. 실제 배포 시 선택한 호스트의 스케줄러가
 새 스킬/엔진 버전, private state, 이전 run ID에 접근하는지 확인해야 한다. 새 세션 read-back,
 중단 복구, 보고 생성, 전달 확인을 각각 검증한다. 기존 개인 예약/알림은 별도 승인 전 변경하지 않는다.

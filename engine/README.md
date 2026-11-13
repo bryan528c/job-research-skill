@@ -55,6 +55,12 @@ employer도 법인 미확정 frontier에 추가한다. 미탐색·차단·미평
 
 ## 검증
 
+11월13일 개발 검증은 [독립 표본·복원·전문 채널 비교](docs/VALIDATION.20261113.parallel.ko.md)에
+실제 수집, 직접 URL 개입, 미확인과 합성 검사를 구분한다. GameJob 개별 공고/관측 iframe과
+부분 카테고리 발견, 접수 시작 후 재검수, 근거 있는 동일 공고의 제출 이력·보고 중복 방지,
+별도 헤더 마감 보정과 JobKorea 메타데이터 경계를 보강했다. 전문 채널 전체 페이지·운영
+호스트/채팅 전달은 미검증이며, 선택형 Docling 실험은 기존 엔진에 통합하지 않았다.
+
 ```sh
 python -m unittest discover -s tests -v
 python tools/scale_check.py

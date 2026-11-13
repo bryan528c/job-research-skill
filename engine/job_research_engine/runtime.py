@@ -15,6 +15,7 @@ def state_signature(store,profile_id,run_id):
       'inventory_detail_checks':[tuple(r) for r in store.db.execute('SELECT c.* FROM inventory_detail_checks c JOIN run_jobs rj ON rj.job_id=c.job_id WHERE rj.run_id=? ORDER BY c.job_id,c.observation_id',(run_id,))],
       'assessments':[tuple(r) for r in store.db.execute('SELECT * FROM assessments WHERE profile_id=? ORDER BY id',(profile_id,))],
       'assessment_reporting':[tuple(r) for r in store.db.execute('SELECT ar.* FROM assessment_reporting ar JOIN assessments a ON a.id=ar.assessment_id WHERE a.profile_id=? ORDER BY ar.assessment_id',(profile_id,))],
+      'job_links':[tuple(r) for r in store.db.execute('SELECT * FROM job_links ORDER BY id')],
       'company_aliases':[tuple(r) for r in store.db.execute('SELECT * FROM company_aliases ORDER BY alias_id')],
       'identifier_overrides':[tuple(r) for r in store.db.execute('SELECT * FROM identifier_overrides ORDER BY id')],
       'identity_conflicts':[tuple(r) for r in store.db.execute('SELECT * FROM identity_conflicts ORDER BY id')],

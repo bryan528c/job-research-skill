@@ -9,8 +9,12 @@ def candidate_audit(store,run_id,*,report_id=None,after='',page_size=100):
     run=store.row('runs',run_id)
     jobs=store.list_run_jobs(run_id)
     records=[];counts=Counter();reasons=Counter()
+    recruiting=Counter();applications=Counter();assessment_states=Counter()
     expected=set()
     for j in jobs:
+        recruiting[j['recruiting_status']]+=1
+        applications[j['user_state']['application']]+=1
+        assessment_states['current' if j['assessment_current'] else 'missing_or_stale']+=1
         if j['recruiting_status']=='closed' or j['deadline_elapsed']:stage='closed_or_deadline_elapsed'
         elif j['decomposed_campaign'] or j['equivalent_decomposition']:stage='decomposed_container'
         elif not j['detail_verified'] or j['content'].get('requires_role_split'):stage='detail_or_role_gap'
@@ -33,7 +37,7 @@ def candidate_audit(store,run_id,*,report_id=None,after='',page_size=100):
     if report_id:
         report=store.row('reports',report_id)
         if report['profile_id']!=run['profile_id']:raise EngineError('report belongs to another profile')
-        mapping=json.loads(report['mapping_json']);shown={m['job_id'] for m in mapping}
+        mapping=json.loads(report['mapping_json']);shown={jid for m in mapping for jid in [m['job_id'],*m.get('equivalent_job_ids',[])]}
         by_id={r['job_id']:r for r in records}
         unreported=expected-shown
         new=[];changed=[];potential=[]
@@ -52,6 +56,9 @@ def candidate_audit(store,run_id,*,report_id=None,after='',page_size=100):
     records.sort(key=lambda r:r['job_id'])
     page=[r for r in records if r['job_id']>after][:page_size+1];more=len(page)>page_size;page=page[:page_size]
     return {'run_id':run_id,'source_role_records':len(jobs),'stage_counts':dict(sorted(counts.items())),
+        'recruiting_status_counts':dict(sorted(recruiting.items())),
+        'application_state_counts':dict(sorted(applications.items())),
+        'assessment_state_counts':dict(sorted(assessment_states.items())),
         'coverage_unit':'source and individual-role records, not unique vacancies or firms',
         'unreviewed_is_not_excluded':True,'national_coverage':'unknown',
         'exclusion_reason_groups':[{'reason_sha256':key,'source_role_records':n} for key,n in reasons.most_common()],
